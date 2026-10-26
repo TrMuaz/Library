@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Slide Library</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <div id="backdrop" class="backdrop hidden"></div>
+
+    <aside id="sidebar" class="sidebar">
+      <div class="brand" id="brand">📚 Slide Library</div>
+      <input id="search" type="search" placeholder="Search title, tag, notes…" dir="auto">
+      <nav id="folderTree" class="tree"></nav>
+      <button id="addFolderBtn" class="ghost edit-only">+ New folder</button>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button id="menuBtn" class="icon-btn mobile-only" aria-label="Menu">☰</button>
+        <h1 id="viewTitle">All slides</h1>
+        <div class="spacer"></div>
+        <button id="addSlideBtn" class="primary edit-only">+ Add slide</button>
+        <button id="editToggle" class="ghost">🔒 Edit</button>
+        <button id="themeBtn" class="icon-btn" aria-label="Toggle theme">🌓</button>
+      </header>
+      <div id="banner" class="banner hidden"></div>
+      <section id="grid" class="grid"></section>
+      <div id="empty" class="empty hidden"></div>
+    </main>
+  </div>
+
+  <!-- Viewer -->
+  <div id="viewer" class="viewer hidden">
+    <div class="viewer-head">
+      <button id="vClose" class="ghost">← Back</button>
+      <div id="vTitle" class="v-title" dir="auto"></div>
+      <div class="spacer"></div>
+      <button id="vPrev" class="ghost" title="Previous (←)">‹</button>
+      <button id="vNext" class="ghost" title="Next (→)">›</button>
+      <button id="vShare" class="ghost" title="Copy link">🔗</button>
+      <a id="vOpen" class="btn ghost" target="_blank" rel="noopener">Open original ↗</a>
+      <button id="vFull" class="primary" title="Fullscreen (F)">⛶ Fullscreen</button>
+    </div>
+    <div class="viewer-body">
+      <div id="stage" class="stage">
+        <iframe id="vFrame" title="Slide preview" allowfullscreen allow="fullscreen; autoplay" referrerpolicy="no-referrer-when-downgrade"></iframe>
+        <button id="stagePrev" class="stage-nav left" aria-label="Previous">‹</button>
+        <button id="stageNext" class="stage-nav right" aria-label="Next">›</button>
+        <button id="stageExit" class="stage-exit" aria-label="Exit fullscreen">✕</button>
+      </div>
+      <aside id="details" class="details"></aside>
+    </div>
+  </div>
+
+  <!-- Add / edit dialog -->
+  <dialog id="slideDialog">
+    <form id="slideForm">
+      <h2 id="dlgTitle">Add slide</h2>
+      <label>Slide URL (Google Slides, Google Drive, OneDrive, or Canva)
+        <input id="fUrl" type="url" required placeholder="https://docs.google.com/presentation/d/…">
+      </label>
+      <div id="urlStatus" class="status"></div>
+      <div class="preview-box"><iframe id="fPreview" title="Preview" allowfullscreen></iframe><span id="previewHint">Preview appears here</span></div>
+      <label>Title
+        <input id="fTitle" type="text" required placeholder="e.g. Grade 8 – Tajweed Lesson 3" dir="auto">
+      </label>
+      <label>Folder
+        <select id="fFolder"></select>
+      </label>
+      <label>Tags (comma separated)
+        <input id="fTags" type="text" placeholder="tajweed, grade8, term1" dir="auto">
+      </label>
+      <label>Notes
+        <textarea id="fNotes" rows="2" dir="auto"></textarea>
+      </label>
+      <div class="dlg-actions">
+        <button type="button" id="fCancel" class="ghost">Cancel</button>
+        <button type="submit" id="fSave" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
