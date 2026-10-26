@@ -8,7 +8,12 @@
     'google-slides': { label: 'Google Slides', icon: '🟨' },
     'google-drive': { label: 'Google Drive', icon: '📁' },
     'canva': { label: 'Canva', icon: '🎨' },
-    'onedrive': { label: 'OneDrive', icon: '☁️' }
+    'onedrive': { label: 'OneDrive', icon: '☁️' },
+    'google-docs': { label: 'Google Docs', icon: '📄' },
+    'google-sheets': { label: 'Google Sheets', icon: '📊' },
+    'google-forms': { label: 'Google Forms', icon: '📝' },
+    'google-drawings': { label: 'Google Drawings', icon: '✏️' },
+    'google-folder': { label: 'Drive folder', icon: '🗂️' }
   };
 
   const state = {
@@ -47,8 +52,15 @@
   }
 
   /* ---------- link conversion (keep in sync with Code.gs) ---------- */
+  function cleanUrl(raw) {
+    let s = String(raw || '').trim();
+    const f = s.match(/<iframe[^>]*\ssrc\s*=\s*["']([^"']+)["']/i);   // pasted embed code
+    if (f) s = f[1].replace(/&amp;/g, '&');
+    return s.trim();
+  }
+
   function toEmbed(raw) {
-    const url = String(raw || '').trim();
+    const url = cleanUrl(raw);
     let m;
     if (!/^https:\/\//i.test(url)) return null;
 
@@ -62,6 +74,27 @@
         thumb: `https://drive.google.com/thumbnail?id=${m[1]}&sz=w480`
       };
     }
+    if ((m = url.match(/docs\.google\.com\/document\/d\/e\/([\w-]+)/))) {
+      return { source: 'google-docs', embedUrl: `https://docs.google.com/document/d/e/${m[1]}/pub?embedded=true` };
+    }
+    if ((m = url.match(/docs\.google\.com\/document\/d\/([\w-]+)/))) {
+      return { source: 'google-docs', embedUrl: `https://docs.google.com/document/d/${m[1]}/preview`, thumb: `https://drive.google.com/thumbnail?id=${m[1]}&sz=w480` };
+    }
+    if ((m = url.match(/docs\.google\.com\/spreadsheets\/d\/e\/([\w-]+)/))) {
+      return { source: 'google-sheets', embedUrl: `https://docs.google.com/spreadsheets/d/e/${m[1]}/pubhtml?widget=true&headers=false` };
+    }
+    if ((m = url.match(/docs\.google\.com\/spreadsheets\/d\/([\w-]+)/))) {
+      return { source: 'google-sheets', embedUrl: `https://docs.google.com/spreadsheets/d/${m[1]}/preview`, thumb: `https://drive.google.com/thumbnail?id=${m[1]}&sz=w480` };
+    }
+    if ((m = url.match(/docs\.google\.com\/forms\/d\/e\/([\w-]+)/))) {
+      return { source: 'google-forms', embedUrl: `https://docs.google.com/forms/d/e/${m[1]}/viewform?embedded=true` };
+    }
+    if ((m = url.match(/docs\.google\.com\/drawings\/d\/([\w-]+)/))) {
+      return { source: 'google-drawings', embedUrl: `https://docs.google.com/drawings/d/${m[1]}/preview` };
+    }
+    if ((m = url.match(/drive\.google\.com\/drive\/(?:u\/\d+\/)?folders\/([\w-]+)/))) {
+      return { source: 'google-folder', embedUrl: `https://drive.google.com/embeddedfolderview?id=${m[1]}#list` };
+    }
     if ((m = url.match(/drive\.google\.com\/file\/d\/([\w-]+)/)) ||
         (m = url.match(/drive\.google\.com\/open\?(?:[^#]*&)?id=([\w-]+)/))) {
       return {
@@ -69,6 +102,10 @@
         embedUrl: `https://drive.google.com/file/d/${m[1]}/preview`,
         thumb: `https://drive.google.com/thumbnail?id=${m[1]}&sz=w480`
       };
+    }
+    if (/^https:\/\/1drv\.ms\//i.test(url)) return { source: 'onedrive', embedUrl: null, resolve: true };
+    if (/^https:\/\/[\w-]+\.sharepoint\.com\/:[a-z]:\//i.test(url)) {
+      return { source: 'onedrive', embedUrl: url + (url.indexOf('?') > -1 ? '&' : '?') + 'action=embedview' };
     }
     if (/^https:\/\/onedrive\.live\.com\/embed\?/i.test(url) ||
         /^https:\/\/[\w-]+\.sharepoint\.com\/.+\/embed\.aspx/i.test(url)) {
@@ -471,20 +508,41 @@
   }
 
   function updatePreview() {
-    const url = $('#fUrl').value.trim();
+    const raw = $('#fUrl').value;
+    const url = cleanUrl(raw);
     const status = $('#urlStatus'), box = $('.preview-box'), frame = $('#fPreview');
-    if (!url) { status.textContent = ''; status.className = 'status'; box.classList.remove('live'); frame.src = 'about:blank'; return; }
+    const setStatus = (msg, cls) => { status.textContent = msg; status.className = 'status' + (cls ? ' ' + cls : ''); };
+    const showFrame = embedUrl => {
+      box.classList.add('live');
+      if (frame.dataset.src !== embedUrl) { frame.dataset.src = embedUrl; frame.src = embedUrl; }
+    };
+    const hideFrame = () => { box.classList.remove('live'); frame.src = 'about:blank'; frame.removeAttribute('data-src'); };
+
+    if (!url) { setStatus(''); hideFrame(); return; }
     const conv = toEmbed(url);
     if (!conv) {
-      status.textContent = '✗ Not recognised. Use a Google Slides, Google Drive, OneDrive embed, or Canva “view” link.';
-      status.className = 'status err';
-      box.classList.remove('live'); frame.src = 'about:blank';
+      setStatus('✗ Not recognised. Use a Google Slides/Docs/Sheets/Drive link, a OneDrive embed code, or a Canva “view” link.', 'err');
+      hideFrame();
       return;
     }
-    status.textContent = `✓ ${SOURCES[conv.source].label} detected. If the preview stays blank, set sharing to “Anyone with the link can view”.`;
-    status.className = 'status ok';
-    box.classList.add('live');
-    if (frame.dataset.src !== conv.embedUrl) { frame.dataset.src = conv.embedUrl; frame.src = conv.embedUrl; }
+    const hint = conv.source === 'onedrive'
+      ? 'If it asks you to sign in, the file is not shared as “Anyone with the link”.'
+      : 'If the preview stays blank, set sharing to “Anyone with the link can view”.';
+
+    if (conv.resolve) {
+      setStatus('Looking up OneDrive link…');
+      hideFrame();
+      apiPost('resolve', { url }).then(j => {
+        if (cleanUrl($('#fUrl').value) !== url) return;
+        setStatus(`✓ OneDrive detected. ${hint}`, 'ok');
+        showFrame(j.embedUrl);
+      }).catch(e => {
+        if (cleanUrl($('#fUrl').value) === url) setStatus('✗ ' + e.message, 'err');
+      });
+      return;
+    }
+    setStatus(`✓ ${SOURCES[conv.source].label} detected. ${hint}`, 'ok');
+    showFrame(conv.embedUrl);
   }
 
   function openDialog(slide) {
@@ -503,7 +561,7 @@
 
   async function saveDialog(e) {
     e.preventDefault();
-    const url = $('#fUrl').value.trim();
+    const url = cleanUrl($('#fUrl').value);
     if (!toEmbed(url)) { toast('That link type is not supported.', 'err'); return; }
     const data = {
       url,
