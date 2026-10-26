@@ -59,8 +59,8 @@
   <dialog id="slideDialog">
     <form id="slideForm">
       <h2 id="dlgTitle">Add slide</h2>
-      <label>Slide URL (Google Slides, Google Drive, OneDrive, or Canva)
-        <input id="fUrl" type="url" required placeholder="https://docs.google.com/presentation/d/…">
+      <label>Link (Google Slides/Docs/Sheets/Drive, OneDrive, or Canva). You can also paste an embed code
+        <input id="fUrl" type="text" required autocomplete="off" placeholder="https://docs.google.com/presentation/d/… or <iframe …>">
       </label>
       <div id="urlStatus" class="status"></div>
       <div class="preview-box"><iframe id="fPreview" title="Preview" allowfullscreen></iframe><span id="previewHint">Preview appears here</span></div>
