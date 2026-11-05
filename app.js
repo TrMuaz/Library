@@ -121,6 +121,9 @@
     if ((m = url.match(/canva\.com\/design\/([\w-]+)\/(?:([\w-]+)\/)?(?:view|watch)/))) {
       return { source: 'canva', embedUrl: `https://www.canva.com/design/${m[1]}/${m[2] ? m[2] + '/' : ''}view?embed` };
     }
+    if (/^https:\/\//i.test(url)) {
+      return { source: 'web', embedUrl: url };
+    }
     return null;
   }
 
