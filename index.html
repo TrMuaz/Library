@@ -1,91 +1,92 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Slide Library</title>
-  <link rel="stylesheet" href="style.css">
+  <meta name="theme-color" content="#f7f6f2">
+  <meta name="description" content="An organized home for teaching slides, documents, and interactive resources.">
+  <title>Folio — Slide library</title>
+  <link rel="preconnect" href="https://api.fontshare.com">
+  <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700,900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./style.css">
+  <script src="./config.js" defer></script>
+  <script src="./app.js" defer></script>
 </head>
 <body>
-  <div class="app">
-    <div id="backdrop" class="backdrop hidden"></div>
-
-    <aside id="sidebar" class="sidebar">
-      <div class="brand" id="brand">📚 Slide Library</div>
-      <input id="search" type="search" placeholder="Search title, tag, notes…" dir="auto">
-      <nav id="folderTree" class="tree"></nav>
-      <button id="addFolderBtn" class="ghost edit-only">+ New folder</button>
-    </aside>
-
-    <main class="main">
-      <header class="topbar">
-        <button id="menuBtn" class="icon-btn mobile-only" aria-label="Menu">☰</button>
-        <h1 id="viewTitle">All slides</h1>
-        <div class="spacer"></div>
-        <button id="addSlideBtn" class="primary edit-only">+ Add slide</button>
-        <button id="editToggle" class="ghost">🔒 Edit</button>
-        <button id="themeBtn" class="icon-btn" aria-label="Toggle theme">🌓</button>
-      </header>
-      <div id="banner" class="banner hidden"></div>
-      <section id="grid" class="grid"></section>
-      <div id="empty" class="empty hidden"></div>
+<a class="skip-link" href="#main">Skip to library</a>
+<svg class="sprite" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="m10 13 4-4M8 16l-1 1a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m0 2 1-1a4 4 0 0 1 6 6l-5 5a4 4 0 0 1-6 0" transform="translate(2 1) scale(.9)"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 3h7v7m0-7L10 14M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m8 0h5v-5"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1 1m12 12 1 1M5 19l1-1M18 6l1-1"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 8a9 9 0 1 0 .2 7M20 3v6h-6"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Zm0 0v6h6M8 13h8M8 17h5"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="m15 5 4 4M4 20l4-1L21 6a2.8 2.8 0 0 0-4-4L4 15Zm9 0h8"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></symbol>
+</defs></svg>
+<div class="app-shell">
+  <button id="sidebarBackdrop" class="sidebar-backdrop" aria-label="Close navigation" hidden></button>
+  <aside id="sidebar" class="sidebar" aria-label="Library navigation">
+    <a class="brand" href="#" aria-label="Folio home"><svg viewBox="0 0 36 36" fill="none" aria-hidden="true"><path d="M7 8h19v7H14v14H7Z" fill="currentColor"/><path d="M18 19h11v10H18Z" fill="currentColor" opacity=".45"/></svg><span id="brandName">Folio<span class="brand-dot">.</span></span></a>
+    <div class="workspace-label">RESOURCE LIBRARY</div>
+    <nav class="primary-nav" aria-label="Collections">
+      <button id="allNav" class="nav-row active"><svg class="icon"><use href="#i-grid"/></svg><span>All resources</span><span id="allCount" class="count">0</span></button>
+      <button id="favoritesNav" class="nav-row"><svg class="icon"><use href="#i-star"/></svg><span>Favorites</span><span id="favoritesCount" class="count">0</span></button>
+      <button id="unfiledNav" class="nav-row"><svg class="icon"><use href="#i-file"/></svg><span>Unfiled</span><span id="unfiledCount" class="count">0</span></button>
+    </nav>
+    <div class="folder-heading"><span>FOLDERS</span><button id="addFolder" class="icon-btn admin-only" title="New folder" aria-label="New folder" hidden><svg class="icon"><use href="#i-plus"/></svg></button></div>
+    <nav id="folderTree" class="folder-tree" aria-label="Folders"></nav>
+    <p id="folderEmpty" class="folder-empty">A place for every topic.<br>Folders will appear here.</p>
+    <div class="sidebar-bottom">
+      <div class="library-note"><svg class="icon"><use href="#i-link"/></svg><div><strong>One library. Every format.</strong><p>Slides, documents &amp; the web,<br>neatly in one place.</p></div></div>
+      <button id="adminToggle" class="nav-row admin-toggle"><svg class="icon"><use href="#i-lock"/></svg><span id="adminLabel">Admin access</span><span id="adminIndicator" class="status-dot"></span></button>
+      <div class="sidebar-caption"><span id="roleLabel">VIEW-ONLY LIBRARY</span><span>v1.0</span></div>
+    </div>
+  </aside>
+  <div class="main-shell">
+    <header class="topbar">
+      <button id="menuToggle" class="icon-btn mobile-menu" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false"><svg class="icon"><use href="#i-menu"/></svg></button>
+      <div class="search-wrap"><svg class="icon"><use href="#i-search"/></svg><label class="sr-only" for="searchInput">Search title, tags, or notes</label><input id="searchInput" type="search" placeholder="Search your library…" autocomplete="off"><kbd>/</kbd></div>
+      <div class="top-actions"><button id="refreshBtn" class="icon-btn" title="Refresh library" aria-label="Refresh library"><svg class="icon"><use href="#i-refresh"/></svg></button><button id="themeToggle" class="icon-btn" title="Switch theme" aria-label="Switch theme"><svg class="icon"><use href="#i-moon"/></svg></button><button id="addSlide" class="btn primary admin-only" hidden><svg class="icon"><use href="#i-plus"/></svg><span>Add slide</span></button><span id="viewOnlyPill" class="view-pill"><svg class="icon"><use href="#i-lock"/></svg>View only</span></div>
+    </header>
+    <main id="main" tabindex="-1">
+      <div id="breadcrumbs" class="breadcrumbs" aria-label="Breadcrumb"></div>
+      <section class="page-heading"><div><div class="eyebrow">COLLECT. ORGANIZE. PRESENT.</div><h1 id="pageTitle">All resources<span class="heading-period">.</span></h1><p id="pageDescription">Good ideas deserve a place of their own.</p></div><div id="resourceTotal" class="total-label">0 resources</div></section>
+      <div id="connectionStatus" class="notice" role="status" hidden></div>
+      <div class="filter-bar"><div class="filter-left"><span class="section-label">YOUR COLLECTION</span><span id="resultCount" class="subtle">0 items</span></div><div class="filter-controls"><label class="sr-only" for="sourceFilter">Filter by source</label><select id="sourceFilter"><option value="">All sources</option></select><label class="sr-only" for="sortSelect">Sort resources</label><select id="sortSelect"><option value="newest">Recently added</option><option value="updated">Recently updated</option><option value="title">Title A–Z</option></select></div></div>
+      <div id="activeFilters" class="active-filters" hidden></div>
+      <section id="resourceGrid" class="resource-grid" aria-label="Resource cards"></section>
+      <section id="emptyState" class="empty-state" hidden><svg class="empty-icon" viewBox="0 0 80 80" fill="none" aria-hidden="true"><rect x="19" y="14" width="46" height="54" rx="4" stroke="currentColor" opacity=".35"/><rect x="12" y="20" width="46" height="54" rx="4" fill="var(--color-bg)" stroke="currentColor"/><path d="M23 36h24M23 44h17M23 59h9" stroke="currentColor" stroke-width="2"/></svg><h2 id="emptyTitle">Make room for good ideas.</h2><p id="emptyText">Your slides, documents, and favorite resources will live here.</p><button id="emptyAction" class="btn primary">Get started</button></section>
+      <footer class="main-footer"><span id="syncLabel">Not connected</span><button id="helpBtn" class="text-btn">Keyboard shortcuts <kbd>?</kbd></button></footer>
     </main>
   </div>
+</div>
 
-  <!-- Viewer -->
-  <div id="viewer" class="viewer hidden">
-    <div class="viewer-head">
-      <button id="vClose" class="ghost">← Back</button>
-      <div id="vTitle" class="v-title" dir="auto"></div>
-      <div class="spacer"></div>
-      <button id="vPrev" class="ghost" title="Previous (←)">‹</button>
-      <button id="vNext" class="ghost" title="Next (→)">›</button>
-      <button id="vShare" class="ghost" title="Copy link">🔗</button>
-      <a id="vOpen" class="btn ghost" target="_blank" rel="noopener">Open original ↗</a>
-      <button id="vFull" class="primary" title="Fullscreen (F)">⛶ Fullscreen</button>
-    </div>
-    <div class="viewer-body">
-      <div id="stage" class="stage">
-        <iframe id="vFrame" title="Slide preview" allowfullscreen allow="fullscreen; autoplay" referrerpolicy="no-referrer-when-downgrade"></iframe>
-        <button id="stagePrev" class="stage-nav left" aria-label="Previous">‹</button>
-        <button id="stageNext" class="stage-nav right" aria-label="Next">›</button>
-        <button id="stageExit" class="stage-exit" aria-label="Exit fullscreen">✕</button>
-      </div>
-      <aside id="details" class="details"></aside>
-    </div>
-  </div>
+<dialog id="adminDialog" class="dialog small" aria-labelledby="adminTitle"><form id="adminForm"><div class="dialog-heading"><div><div class="eyebrow">LIBRARY ADMIN</div><h2 id="adminTitle">A little behind the scenes.</h2></div><button type="button" class="icon-btn" data-close="adminDialog" aria-label="Close"><svg class="icon"><use href="#i-close"/></svg></button></div><p class="dialog-intro">Unlock editing to add resources and organize folders. Visitors can always browse.</p><label for="adminPassword">Admin password</label><input id="adminPassword" type="password" required autocomplete="current-password" maxlength="200" placeholder="Your private admin password"><p id="adminError" class="field-error" role="alert"></p><p class="hint">Verified by the server. Kept in memory only; locks automatically after inactivity.</p><div class="dialog-actions"><button type="button" class="btn" data-close="adminDialog">Cancel</button><button id="unlockBtn" class="btn primary" type="submit">Unlock editing</button></div></form></dialog>
 
-  <!-- Add / edit dialog -->
-  <dialog id="slideDialog">
-    <form id="slideForm">
-      <h2 id="dlgTitle">Add slide</h2>
-      <label>Link (Google Slides/Docs/Sheets/Drive, OneDrive, or Canva). You can also paste an embed code
-        <input id="fUrl" type="text" required autocomplete="off" placeholder="https://docs.google.com/presentation/d/… or <iframe …>">
-      </label>
-      <div id="urlStatus" class="status"></div>
-      <div class="preview-box"><iframe id="fPreview" title="Preview" allowfullscreen></iframe><span id="previewHint">Preview appears here</span></div>
-      <label>Title
-        <input id="fTitle" type="text" required placeholder="e.g. Grade 8 – Tajweed Lesson 3" dir="auto">
-      </label>
-      <label>Folder
-        <select id="fFolder"></select>
-      </label>
-      <label>Tags (comma separated)
-        <input id="fTags" type="text" placeholder="tajweed, grade8, term1" dir="auto">
-      </label>
-      <label>Notes
-        <textarea id="fNotes" rows="2" dir="auto"></textarea>
-      </label>
-      <div class="dlg-actions">
-        <button type="button" id="fCancel" class="ghost">Cancel</button>
-        <button type="submit" id="fSave" class="primary">Save</button>
-      </div>
-    </form>
-  </dialog>
+<dialog id="slideDialog" class="dialog wide" aria-labelledby="slideDialogTitle"><form id="slideForm"><div class="dialog-heading"><div><div class="eyebrow">BUILD YOUR COLLECTION</div><h2 id="slideDialogTitle">Add a resource</h2></div><button type="button" class="icon-btn" data-close="slideDialog" aria-label="Close"><svg class="icon"><use href="#i-close"/></svg></button></div><div class="editor-layout"><div class="editor-fields"><label for="slideInput">Link or iframe embed code <span class="required">*</span></label><textarea id="slideInput" rows="3" required maxlength="10000" placeholder="https://docs.google.com/presentation/d/…&#10;or paste the full &lt;iframe&gt; code"></textarea><p class="hint">Google, Canva, GitHub Pages, or OneDrive.</p><p id="linkError" class="field-error" role="alert"></p><label for="slideTitle">Title <span class="required">*</span></label><input id="slideTitle" required maxlength="160" placeholder="Give this resource a clear title"><div class="field-pair"><div><label for="slideFolder">Folder</label><select id="slideFolder"></select></div><div><label for="slideTags">Tags</label><input id="slideTags" maxlength="820" placeholder="science, year 5"></div></div><p class="hint">Separate tags with commas. Up to 20 tags.</p><details id="slideDetails"><summary>Notes &amp; cover image</summary><label for="slideNotes">Notes</label><textarea id="slideNotes" rows="3" maxlength="4000" placeholder="A reminder, learning objective, or useful context…"></textarea><label for="slideThumbnail">Cover image URL</label><input id="slideThumbnail" type="url" maxlength="2000" placeholder="https://…/your-cover.jpg"><p class="hint">Optional public HTTPS image. Otherwise, a title-based cover is used.</p></details><label class="checkbox-label"><input id="slideFavorite" type="checkbox"> Feature in Favorites</label></div><aside class="preview-panel" aria-label="Inline preview"><div class="preview-heading"><span class="section-label">LIVE PREVIEW</span><span id="previewBadge" class="badge">Waiting for a link</span></div><div id="previewStage" class="preview-stage"><p>Paste a link.<br>See it here before saving.</p></div><p id="previewHint" class="hint">Sharing permissions still apply. A preview cannot bypass a private file.</p><a id="previewOriginal" class="text-btn" href="https://docs.google.com/" target="_blank" rel="noopener noreferrer" hidden>Open original <svg class="icon"><use href="#i-external"/></svg></a></aside></div><p id="slideError" class="field-error" role="alert"></p><div class="dialog-actions"><button type="button" class="btn" data-close="slideDialog">Cancel</button><button id="saveSlideBtn" class="btn primary" type="submit">Save resource</button></div></form></dialog>
 
-  <div id="toast" class="toast hidden"></div>
+<dialog id="folderDialog" class="dialog small" aria-labelledby="folderDialogTitle"><form id="folderForm"><div class="dialog-heading"><h2 id="folderDialogTitle">New folder</h2><button type="button" class="icon-btn" data-close="folderDialog" aria-label="Close"><svg class="icon"><use href="#i-close"/></svg></button></div><label for="folderName">Folder name</label><input id="folderName" required maxlength="80" placeholder="A subject, a year, a new idea…"><label for="folderParent">Parent folder</label><select id="folderParent"></select><p class="hint">Nest folders up to 12 levels deep.</p><p id="folderError" class="field-error" role="alert"></p><div class="folder-edit-actions" id="folderEditActions" hidden><button id="folderAddChild" type="button" class="btn"><svg class="icon"><use href="#i-plus"/></svg>Add subfolder</button><button id="folderDelete" type="button" class="btn danger"><svg class="icon"><use href="#i-trash"/></svg>Delete folder</button></div><div class="dialog-actions"><button type="button" class="btn" data-close="folderDialog">Cancel</button><button id="saveFolderBtn" type="submit" class="btn primary">Save folder</button></div></form></dialog>
 
-  <script src="config.js"></script>
-  <script src="app.js"></script>
+<dialog id="confirmDialog" class="dialog small" aria-labelledby="confirmTitle"><div class="dialog-heading"><h2 id="confirmTitle">Delete resource?</h2><button class="icon-btn" data-close="confirmDialog" aria-label="Cancel"><svg class="icon"><use href="#i-close"/></svg></button></div><p id="confirmText" class="dialog-intro"></p><p id="confirmError" class="field-error" role="alert"></p><div class="dialog-actions"><button class="btn" data-close="confirmDialog">Keep it</button><button id="confirmDelete" class="btn danger">Delete</button></div></dialog>
+
+<dialog id="viewerDialog" class="viewer" aria-labelledby="viewerTitle"><div class="viewer-shell"><header class="viewer-header"><div class="viewer-heading"><span id="viewerSource" class="badge"></span><h2 id="viewerTitle"></h2></div><div class="viewer-actions"><button id="shareSlide" class="btn"><svg class="icon"><use href="#i-link"/></svg><span>Share</span></button><a id="viewerOriginal" class="icon-btn" target="_blank" rel="noopener noreferrer" aria-label="Open original" title="Open original"><svg class="icon"><use href="#i-external"/></svg></a><button id="fullscreenBtn" class="icon-btn" aria-label="Toggle fullscreen (F)" title="Fullscreen (F)"><svg class="icon"><use href="#i-expand"/></svg></button><button id="closeViewer" class="icon-btn" aria-label="Close viewer (Esc)" title="Close (Esc)"><svg class="icon"><use href="#i-close"/></svg></button></div></header><div id="viewerStage" class="viewer-stage"></div><footer class="viewer-footer"><p id="viewerNote">If the preview is blocked, use Open original.</p><div class="viewer-navigation"><button id="prevSlide" class="icon-btn" aria-label="Previous resource (left arrow)"><svg class="icon rotate"><use href="#i-chevron"/></svg></button><span id="viewerPosition"></span><button id="nextSlide" class="icon-btn" aria-label="Next resource (right arrow)"><svg class="icon"><use href="#i-chevron"/></svg></button></div></footer></div></dialog>
+
+<dialog id="shareDialog" class="dialog small" aria-labelledby="shareTitle"><div class="dialog-heading"><h2 id="shareTitle">Share this resource</h2><button class="icon-btn" data-close="shareDialog" aria-label="Close"><svg class="icon"><use href="#i-close"/></svg></button></div><p class="dialog-intro">Anyone with this link can open the library viewer. The original file’s permissions still apply.</p><label for="shareUrl">Direct link</label><input id="shareUrl" readonly><p id="shareFeedback" class="hint" role="status"></p><div class="dialog-actions"><button id="copyShare" class="btn primary">Copy link</button></div></dialog>
+
+<dialog id="helpDialog" class="dialog small" aria-labelledby="helpTitle"><div class="dialog-heading"><h2 id="helpTitle">A few useful shortcuts</h2><button class="icon-btn" data-close="helpDialog" aria-label="Close"><svg class="icon"><use href="#i-close"/></svg></button></div><dl class="shortcut-list"><div><dt>Search library</dt><dd><kbd>/</kbd></dd></div><div><dt>Next / previous resource</dt><dd><kbd>←</kbd> <kbd>→</kbd></dd></div><div><dt>Toggle fullscreen in viewer</dt><dd><kbd>F</kbd></dd></div><div><dt>Close viewer / dialog</dt><dd><kbd>Esc</kbd></dd></div></dl><p class="hint">Viewer shortcuts work while focus is on the library, not inside a third-party iframe. Click the viewer toolbar to return focus.</p></dialog>
+<noscript><div class="notice">Enable JavaScript to browse this library.</div></noscript>
 </body>
 </html>
