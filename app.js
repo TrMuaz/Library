@@ -14,6 +14,7 @@
     'google-forms': { label: 'Google Forms', icon: '📝' },
     'google-drawings': { label: 'Google Drawings', icon: '✏️' },
     'google-folder': { label: 'Drive folder', icon: '🗂️' }
+    'web': { label: 'Web page', icon: '🌐' },
   };
 
   const state = {
