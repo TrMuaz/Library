@@ -1,696 +1,712 @@
-(() => {
-  'use strict';
-
-  const CFG = window.CONFIG;
-  const $ = (s, root = document) => root.querySelector(s);
-
-  const SOURCES = {
-    'google-slides': { label: 'Google Slides', icon: '🟨' },
-    'google-drive': { label: 'Google Drive', icon: '📁' },
-    'canva': { label: 'Canva', icon: '🎨' },
-    'onedrive': { label: 'OneDrive', icon: '☁️' },
-    'google-docs': { label: 'Google Docs', icon: '📄' },
-    'google-sheets': { label: 'Google Sheets', icon: '📊' },
-    'google-forms': { label: 'Google Forms', icon: '📝' },
-    'google-drawings': { label: 'Google Drawings', icon: '✏️' },
-    'google-folder': { label: 'Drive folder', icon: '🗂️' }
-    'web': { label: 'Web page', icon: '🌐' },
-  };
-
-  const state = {
-    slides: [],
-    folders: [],
-    view: 'all',          // all | fav | recent | none | <folderId>
-    query: '',
-    token: sessionStorage.getItem('slidelib_token') || '',
-    edit: false,
-    editingId: null,
-    collapsed: new Set(JSON.parse(localStorage.getItem('slidelib_collapsed') || '[]'))
-  };
-  state.edit = !!state.token;
-
-  /* ---------- tiny DOM helper ---------- */
-  function h(tag, attrs = {}, ...kids) {
-    const n = document.createElement(tag);
-    for (const [k, v] of Object.entries(attrs)) {
-      if (k === 'class') n.className = v;
-      else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
-      else if (v === true) n.setAttribute(k, '');
-      else if (v !== false && v != null) n.setAttribute(k, v);
-    }
-    kids.flat().forEach(c => {
-      if (c != null && c !== false) n.append(c.nodeType ? c : document.createTextNode(c));
+/* Folio Library — vanilla JavaScript. Configure deployment only in config.js. */
+'use strict';
+// BEGIN SHARED CONVERTER v1.0.0 — byte-identical in Code.gs and app.js.
+// Change BOTH copies together; GAS does not provide the browser URL class.
+var CONVERTER_VERSION = '1.0.0';
+function decodeEntities_(value) {
+  return String(value).replace(/&amp;/gi, '&').replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'").replace(/&#(x[0-9a-f]+|\d+);/gi, function (_, n) {
+      var code = n.charAt(0).toLowerCase() === 'x' ? parseInt(n.slice(1), 16) : parseInt(n, 10);
+      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : '';
     });
-    return n;
-  }
-
-  function toast(msg, type) {
-    const t = $('#toast');
-    t.textContent = msg;
-    t.className = 'toast' + (type === 'err' ? ' err' : '');
-    clearTimeout(toast._t);
-    toast._t = setTimeout(() => t.classList.add('hidden'), 3200);
-  }
-
-  /* ---------- link conversion (keep in sync with Code.gs) ---------- */
-  function cleanUrl(raw) {
-    let s = String(raw || '').trim();
-    const f = s.match(/<iframe[^>]*\ssrc\s*=\s*["']([^"']+)["']/i);   // pasted embed code
-    if (f) s = f[1].replace(/&amp;/g, '&');
-    return s.trim();
-  }
-
-  function toEmbed(raw) {
-    const url = cleanUrl(raw);
-    let m;
-    if (!/^https:\/\//i.test(url)) return null;
-
-    if ((m = url.match(/docs\.google\.com\/presentation\/d\/e\/([\w-]+)/))) {
-      return { source: 'google-slides', embedUrl: `https://docs.google.com/presentation/d/e/${m[1]}/embed?start=false&loop=false&delayms=3000` };
-    }
-    if ((m = url.match(/docs\.google\.com\/presentation\/d\/([\w-]+)/))) {
-      return {
-        source: 'google-slides',
-        embedUrl: `https://docs.google.com/presentation/d/${m[1]}/embed?start=false&loop=false&delayms=3000`,
-        thumb: `https://drive.google.com/thumbnail?id=${m[1]}&sz=w480`
-      };
-    }
-    if ((m = url.match(/docs\.google\.com\/document\/d\/e\/([\w-]+)/))) {
-      return { source: 'google-docs', embedUrl: `https://docs.google.com/document/d/e/${m[1]}/pub?embedded=true` };
-    }
-    if ((m = url.match(/docs\.google\.com\/document\/d\/([\w-]+)/))) {
-      return { source: 'google-docs', embedUrl: `https://docs.google.com/document/d/${m[1]}/preview`, thumb: `https://drive.google.com/thumbnail?id=${m[1]}&sz=w480` };
-    }
-    if ((m = url.match(/docs\.google\.com\/spreadsheets\/d\/e\/([\w-]+)/))) {
-      return { source: 'google-sheets', embedUrl: `https://docs.google.com/spreadsheets/d/e/${m[1]}/pubhtml?widget=true&headers=false` };
-    }
-    if ((m = url.match(/docs\.google\.com\/spreadsheets\/d\/([\w-]+)/))) {
-      return { source: 'google-sheets', embedUrl: `https://docs.google.com/spreadsheets/d/${m[1]}/preview`, thumb: `https://drive.google.com/thumbnail?id=${m[1]}&sz=w480` };
-    }
-    if ((m = url.match(/docs\.google\.com\/forms\/d\/e\/([\w-]+)/))) {
-      return { source: 'google-forms', embedUrl: `https://docs.google.com/forms/d/e/${m[1]}/viewform?embedded=true` };
-    }
-    if ((m = url.match(/docs\.google\.com\/drawings\/d\/([\w-]+)/))) {
-      return { source: 'google-drawings', embedUrl: `https://docs.google.com/drawings/d/${m[1]}/preview` };
-    }
-    if ((m = url.match(/drive\.google\.com\/drive\/(?:u\/\d+\/)?folders\/([\w-]+)/))) {
-      return { source: 'google-folder', embedUrl: `https://drive.google.com/embeddedfolderview?id=${m[1]}#list` };
-    }
-    if ((m = url.match(/drive\.google\.com\/file\/d\/([\w-]+)/)) ||
-        (m = url.match(/drive\.google\.com\/open\?(?:[^#]*&)?id=([\w-]+)/))) {
-      return {
-        source: 'google-drive',
-        embedUrl: `https://drive.google.com/file/d/${m[1]}/preview`,
-        thumb: `https://drive.google.com/thumbnail?id=${m[1]}&sz=w480`
-      };
-    }
-    if (/^https:\/\/1drv\.ms\//i.test(url)) return { source: 'onedrive', embedUrl: null, resolve: true };
-    if (/^https:\/\/[\w-]+\.sharepoint\.com\/:[a-z]:\//i.test(url)) {
-      return { source: 'onedrive', embedUrl: url + (url.indexOf('?') > -1 ? '&' : '?') + 'action=embedview' };
-    }
-    if (/^https:\/\/onedrive\.live\.com\/embed\?/i.test(url) ||
-        /^https:\/\/[\w-]+\.sharepoint\.com\/.+\/embed\.aspx/i.test(url)) {
-      return { source: 'onedrive', embedUrl: url };
-    }
-    if (/^https:\/\/onedrive\.live\.com\//i.test(url) && (m = url.match(/[?&](?:resid|id)=([^&#]+)/))) {
-      const resid = decodeURIComponent(m[1]);
-      const k = url.match(/[?&]authkey=([^&#]+)/);
-      const c = url.match(/[?&]cid=([^&#]+)/);
-      const cid = c ? decodeURIComponent(c[1]) : resid.split('!')[0];
-      return { source: 'onedrive', embedUrl: `https://onedrive.live.com/embed?cid=${encodeURIComponent(cid)}&resid=${encodeURIComponent(resid)}` + (k ? `&authkey=${encodeURIComponent(decodeURIComponent(k[1]))}` : '') };
-    }
-    if ((m = url.match(/canva\.com\/design\/([\w-]+)\/(?:([\w-]+)\/)?(?:view|watch)/))) {
-      return { source: 'canva', embedUrl: `https://www.canva.com/design/${m[1]}/${m[2] ? m[2] + '/' : ''}view?embed` };
-    }
-    if (/^https:\/\//i.test(url)) {
-      return { source: 'web', embedUrl: url };
-    }
-    return null;
-  }
-
-  /* ---------- API ---------- */
-  const apiReady = () => CFG.API_URL && !CFG.API_URL.includes('PASTE_YOUR');
-
-  async function apiGet() {
-    const r = await fetch(CFG.API_URL, { redirect: 'follow' });
-    const j = await r.json();
-    if (!j.ok) throw new Error(j.error || 'Could not load data');
-    return j;
-  }
-
-  async function apiPost(action, data) {
-    const r = await fetch(CFG.API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids CORS preflight
-      body: JSON.stringify({ action, data, token: state.token })
-    });
-    const j = await r.json();
-    if (!j.ok) throw new Error(j.error || 'Request failed');
-    return j;
-  }
-
-  function saveCache() {
-    try { localStorage.setItem(CFG.CACHE_KEY, JSON.stringify({ slides: state.slides, folders: state.folders })); } catch (e) {}
-  }
-
-  async function refresh(silent) {
+}
+function parseHttps_(value) {
+  var match = /^https:\/\/([a-z0-9.-]+)(?::443)?([/?#][\s\S]*)?$/i.exec(value);
+  if (!match || /[\s\\<>"'\u0000-\u001f\u007f]/.test(value)) throw new Error('Use a complete HTTPS link.');
+  var host = match[1].toLowerCase();
+  if (host.indexOf('..') >= 0 || host.charAt(0) === '.' || host.slice(-1) === '.') throw new Error('Invalid hostname.');
+  var tail = match[2] || '/';
+  if (tail.charAt(0) !== '/') tail = '/' + tail;
+  var hashAt = tail.indexOf('#');
+  var hash = hashAt >= 0 ? tail.slice(hashAt) : '';
+  if (hashAt >= 0) tail = tail.slice(0, hashAt);
+  var qAt = tail.indexOf('?');
+  var path = qAt >= 0 ? tail.slice(0, qAt) : tail;
+  var query = qAt >= 0 ? tail.slice(qAt + 1) : '';
+  var params = Object.create(null);
+  query.split('&').forEach(function (part) {
+    if (!part) return;
+    var at = part.indexOf('=');
     try {
-      const j = await apiGet();
-      state.slides = j.slides;
-      state.folders = j.folders;
-      saveCache();
-      renderAll();
-      route();
-    } catch (e) {
-      if (!silent) toast(e.message, 'err');
-    }
-  }
-
-  /* ---------- folder helpers ---------- */
-  const byId = (arr, id) => arr.find(x => x.id === id);
-  const childrenOf = pid => state.folders
-    .filter(f => (f.parentId || '') === (pid || ''))
-    .sort((a, b) => (a.order - b.order) || a.name.localeCompare(b.name));
-  function descendantIds(id) {
-    const out = [id];
-    childrenOf(id).forEach(c => out.push(...descendantIds(c.id)));
-    return out;
-  }
-  function folderPath(id) {
-    const parts = [];
-    let f = byId(state.folders, id), guard = 0;
-    while (f && guard++ < 20) { parts.unshift(f.name); f = byId(state.folders, f.parentId); }
-    return parts.join(' / ');
-  }
-  const folderExists = id => !!id && !!byId(state.folders, id);
-  const countIn = id => {
-    const ids = new Set(descendantIds(id));
-    return state.slides.filter(s => ids.has(s.folderId)).length;
-  };
-
-  /* ---------- slide helpers ---------- */
-  const tagsOf = s => String(s.tags || '').split(',').map(t => t.trim()).filter(Boolean);
-  const asc = (a, b) => String(a.dateAdded).localeCompare(String(b.dateAdded));
-  const desc = (a, b) => asc(b, a);
-
-  function visibleSlides() {
-    let list = state.slides.slice();
-    const q = state.query.trim().toLowerCase();
-    if (q) {
-      return list.filter(s => {
-        const hay = [s.title, s.tags, s.notes, folderPath(s.folderId)].join(' ').toLowerCase();
-        return hay.includes(q);
-      }).sort(desc);
-    }
-    const v = state.view;
-    if (v === 'fav') list = list.filter(s => s.favorite);
-    else if (v === 'none') list = list.filter(s => !folderExists(s.folderId));
-    else if (v !== 'all' && v !== 'recent') {
-      const ids = new Set(descendantIds(v));
-      list = list.filter(s => ids.has(s.folderId));
-    }
-    if (v === 'recent') return list.sort(desc).slice(0, 12);
-    // inside a folder: oldest first so lessons follow the order you added them
-    return list.sort(byIdIsFolder(v) ? asc : desc);
-  }
-  const byIdIsFolder = v => !['all', 'fav', 'recent', 'none'].includes(v);
-
-  function viewTitle() {
-    if (state.query.trim()) return `Search: “${state.query.trim()}”`;
-    switch (state.view) {
-      case 'all': return 'All slides';
-      case 'fav': return '⭐ Favorites';
-      case 'recent': return '🕒 Recently added';
-      case 'none': return 'Unfiled';
-      default: return folderPath(state.view) || 'All slides';
-    }
-  }
-
-  /* ---------- render: sidebar ---------- */
-  function treeItem({ id, icon, name, count, depth, folder }) {
-    const kids = folder ? childrenOf(folder.id) : [];
-    const collapsed = state.collapsed.has(id);
-    const row = h('div', {
-      class: 'tree-item' + (state.view === id && !state.query ? ' active' : ''),
-      onclick: () => { state.view = id; state.query = ''; $('#search').value = ''; closeMenu(); renderAll(); }
-    },
-      h('span', {
-        class: 'caret',
-        onclick: e => {
-          if (!kids.length) return;
-          e.stopPropagation();
-          collapsed ? state.collapsed.delete(id) : state.collapsed.add(id);
-          localStorage.setItem('slidelib_collapsed', JSON.stringify([...state.collapsed]));
-          renderTree();
-        }
-      }, kids.length ? (collapsed ? '▶' : '▼') : ''),
-      h('span', {}, icon),
-      h('span', { class: 'name', dir: 'auto' }, name),
-      folder ? h('span', { class: 'tree-actions edit-only' },
-        h('button', { title: 'Add subfolder', onclick: e => { e.stopPropagation(); addFolder(folder.id); } }, '＋'),
-        h('button', { title: 'Rename', onclick: e => { e.stopPropagation(); renameFolder(folder); } }, '✎'),
-        h('button', { title: 'Delete', onclick: e => { e.stopPropagation(); deleteFolder(folder); } }, '🗑')
-      ) : null,
-      h('span', { class: 'count' }, String(count))
-    );
-    const wrap = h('div', {}, row);
-    if (kids.length && !collapsed) {
-      wrap.append(h('div', { class: 'tree-children' }, kids.map(k =>
-        treeItem({ id: k.id, icon: '📁', name: k.name, count: countIn(k.id), folder: k }))));
-    }
-    return wrap;
-  }
-
-  function renderTree() {
-    const tree = $('#folderTree');
-    tree.replaceChildren();
-    tree.append(
-      treeItem({ id: 'all', icon: '🗂️', name: 'All slides', count: state.slides.length }),
-      treeItem({ id: 'fav', icon: '⭐', name: 'Favorites', count: state.slides.filter(s => s.favorite).length }),
-      treeItem({ id: 'recent', icon: '🕒', name: 'Recently added', count: Math.min(12, state.slides.length) })
-    );
-    tree.append(h('div', { class: 'tree-label' }, 'Folders'));
-    childrenOf('').forEach(f => tree.append(treeItem({ id: f.id, icon: '📁', name: f.name, count: countIn(f.id), folder: f })));
-    const unfiled = state.slides.filter(s => !folderExists(s.folderId)).length;
-    if (unfiled) tree.append(treeItem({ id: 'none', icon: '📄', name: 'Unfiled', count: unfiled }));
-  }
-
-  /* ---------- render: grid ---------- */
-  function renderGrid() {
-    const grid = $('#grid'), empty = $('#empty');
-    grid.replaceChildren();
-    $('#viewTitle').textContent = viewTitle();
-    const list = visibleSlides();
-
-    if (!list.length) {
-      empty.classList.remove('hidden');
-      empty.textContent = !apiReady()
-        ? 'Connect your Apps Script URL in config.js to load your slides.'
-        : state.slides.length
-          ? 'No slides here yet.'
-          : 'No slides yet. Click 🔒 Edit, enter your password, then “+ Add slide”.';
-      return;
-    }
-    empty.classList.add('hidden');
-
-    list.forEach(s => {
-      const src = SOURCES[s.source] || { label: 'Link', icon: '🔗' };
-      const conv = toEmbed(s.url);
-      const thumb = h('div', { class: 'thumb' }, src.icon);
-      if (conv && conv.thumb) {
-        const img = h('img', { src: conv.thumb, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' });
-        img.addEventListener('error', () => img.remove());
-        thumb.append(img);
-      }
-      if (state.edit) {
-        thumb.append(h('button', {
-          class: 'fav-btn', title: 'Toggle favorite',
-          onclick: e => { e.stopPropagation(); toggleFav(s); }
-        }, s.favorite ? '⭐' : '☆'));
-      } else if (s.favorite) {
-        thumb.append(h('span', { class: 'fav' }, '⭐'));
-      }
-
-      const meta = h('div', { class: 'card-meta' },
-        h('span', { class: 'badge' }, src.label),
-        folderExists(s.folderId) ? h('span', { dir: 'auto' }, '📁 ' + byId(state.folders, s.folderId).name) : null
-      );
-      const tags = tagsOf(s);
-      const card = h('div', { class: 'card', onclick: () => openViewer(s.id) },
-        thumb,
-        h('div', { class: 'card-body' },
-          h('div', { class: 'card-title', dir: 'auto' }, s.title),
-          meta,
-          tags.length ? h('div', { class: 'card-meta' }, tags.map(t => h('span', { class: 'chip', dir: 'auto' }, '#' + t))) : null
-        )
-      );
-      grid.append(card);
-    });
-  }
-
-  function renderAll() {
-    document.body.classList.toggle('edit', state.edit);
-    $('#editToggle').textContent = state.edit ? '🔓 Editing' : '🔒 Edit';
-    renderTree();
-    renderGrid();
-    if (!$('#viewer').classList.contains('hidden')) renderDetails();
-  }
-
-  /* ---------- viewer ---------- */
-  let currentId = null;
-
-  const siblings = s => state.slides
-    .filter(x => (x.folderId || '') === (s.folderId || '')).sort(asc);
-
-  function openViewer(id) {
-    history.pushState({ viewer: 1 }, '', '#slide=' + id);
-    showViewer(id);
-  }
-
-  function showViewer(id) {
-    const s = byId(state.slides, id);
-    if (!s) return hideViewer();
-    currentId = id;
-    $('#viewer').classList.remove('hidden');
-    document.body.style.overflow = 'hidden';
-    const frame = $('#vFrame');
-    if (frame.dataset.src !== s.embedUrl) {
-      frame.dataset.src = s.embedUrl;
-      frame.src = s.embedUrl;
-    }
-    $('#vTitle').textContent = s.title;
-    $('#vOpen').href = s.url;
-    const sib = siblings(s), i = sib.findIndex(x => x.id === id);
-    const hasPrev = i > 0, hasNext = i >= 0 && i < sib.length - 1;
-    [$('#vPrev'), $('#stagePrev')].forEach(b => { b.disabled = !hasPrev; b.style.visibility = hasPrev ? 'visible' : 'hidden'; });
-    [$('#vNext'), $('#stageNext')].forEach(b => { b.disabled = !hasNext; b.style.visibility = hasNext ? 'visible' : 'hidden'; });
-    renderDetails();
-  }
-
-  function hideViewer() {
-    exitFull();
-    currentId = null;
-    $('#viewer').classList.add('hidden');
-    const f = $('#vFrame');
-    f.removeAttribute('data-src');
-    f.src = 'about:blank';
-    document.body.style.overflow = '';
-  }
-
-  function closeViewer() {
-    if (history.state && history.state.viewer) history.back();
-    else { history.replaceState(null, '', location.pathname + location.search); hideViewer(); }
-  }
-
-  function step(dir) {
-    const s = byId(state.slides, currentId);
-    if (!s) return;
-    const sib = siblings(s), i = sib.findIndex(x => x.id === currentId);
-    const next = sib[i + dir];
-    if (next) { history.replaceState({ viewer: 1 }, '', '#slide=' + next.id); showViewer(next.id); }
-  }
-
-  function renderDetails() {
-    const s = byId(state.slides, currentId);
-    const box = $('#details');
-    if (!s) return;
-    const src = SOURCES[s.source] || { label: 'Link' };
-    const tags = tagsOf(s);
-    box.replaceChildren(
-      h('h2', { dir: 'auto' }, s.title),
-      h('div', { class: 'row' },
-        h('span', { class: 'badge' }, src.label),
-        folderExists(s.folderId) ? h('span', { class: 'muted', dir: 'auto' }, '📁 ' + folderPath(s.folderId)) : null
-      ),
-      tags.length ? h('div', { class: 'row' }, tags.map(t => h('span', { class: 'chip', dir: 'auto' }, '#' + t))) : null,
-      s.notes ? h('div', { class: 'notes', dir: 'auto' }, s.notes) : null,
-      h('div', { class: 'muted' }, 'Added ' + new Date(s.dateAdded).toLocaleDateString()),
-      h('div', { class: 'row actions edit-only' },
-        h('button', { onclick: () => toggleFav(s) }, s.favorite ? '⭐ Unfavorite' : '☆ Favorite'),
-        h('button', { onclick: () => openDialog(s) }, '✎ Edit'),
-        h('button', { class: 'danger', onclick: () => deleteSlide(s) }, '🗑 Delete')
-      ),
-      h('div', { class: 'muted' }, 'Shortcuts: F fullscreen · ← → previous/next · Esc close')
-    );
-  }
-
-  /* fullscreen (with a fallback for browsers that cannot fullscreen an element, e.g. iPhone) */
-  const stage = () => $('#stage');
-  const fsSupported = () => !!(stage().requestFullscreen || stage().webkitRequestFullscreen);
-  const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement) || stage().classList.contains('pseudo-full');
-
-  function enterFull() {
-    const st = stage();
-    if (fsSupported()) (st.requestFullscreen || st.webkitRequestFullscreen).call(st);
-    else st.classList.add('pseudo-full');
-  }
-  function exitFull() {
-    stage().classList.remove('pseudo-full');
-    if (document.fullscreenElement) document.exitFullscreen();
-    else if (document.webkitFullscreenElement && document.webkitExitFullscreen) document.webkitExitFullscreen();
-  }
-  const toggleFull = () => (isFull() ? exitFull() : enterFull());
-
-  async function copyShare() {
-    const link = location.origin + location.pathname + '#slide=' + currentId;
-    try { await navigator.clipboard.writeText(link); toast('Link copied'); }
-    catch (e) { prompt('Copy this link:', link); }
-  }
-
-  function route() {
-    const m = location.hash.match(/slide=([\w-]+)/);
-    if (m && byId(state.slides, m[1])) showViewer(m[1]);
-    else if (!$('#viewer').classList.contains('hidden')) hideViewer();
-  }
-
-  /* ---------- slide actions ---------- */
-  async function toggleFav(s) {
-    const next = !s.favorite;
-    s.favorite = next;
-    renderAll();
-    try { await apiPost('editSlide', { id: s.id, favorite: next }); saveCache(); }
-    catch (e) { s.favorite = !next; renderAll(); toast(e.message, 'err'); }
-  }
-
-  async function deleteSlide(s) {
-    if (!confirm(`Delete “${s.title}”? This removes it from the sheet.`)) return;
-    try {
-      await apiPost('deleteSlide', { id: s.id });
-      state.slides = state.slides.filter(x => x.id !== s.id);
-      saveCache();
-      closeViewer();
-      renderAll();
-      toast('Slide deleted');
-    } catch (e) { toast(e.message, 'err'); }
-  }
-
-  /* ---------- folder actions ---------- */
-  async function addFolder(parentId) {
-    const where = parentId ? ` inside “${byId(state.folders, parentId).name}”` : '';
-    const name = prompt('New folder name' + where + ':');
-    if (!name || !name.trim()) return;
-    try {
-      const j = await apiPost('addFolder', { name: name.trim(), parentId: parentId || '' });
-      state.folders.push(j.folder);
-      if (parentId) state.collapsed.delete(parentId);
-      saveCache(); renderAll(); toast('Folder created');
-    } catch (e) { toast(e.message, 'err'); }
-  }
-
-  async function renameFolder(f) {
-    const name = prompt('Rename folder:', f.name);
-    if (!name || !name.trim() || name.trim() === f.name) return;
-    try {
-      await apiPost('renameFolder', { id: f.id, name: name.trim() });
-      f.name = name.trim();
-      saveCache(); renderAll();
-    } catch (e) { toast(e.message, 'err'); }
-  }
-
-  async function deleteFolder(f) {
-    if (!confirm(`Delete folder “${f.name}”? Its slides move to “Unfiled” and subfolders move to the top level.`)) return;
-    try {
-      await apiPost('deleteFolder', { id: f.id });
-      if (state.view === f.id) state.view = 'all';
-      await refresh();
-      toast('Folder deleted');
-    } catch (e) { toast(e.message, 'err'); }
-  }
-
-  /* ---------- add / edit dialog ---------- */
-  const dlg = () => $('#slideDialog');
-
-  function fillFolderSelect(selected) {
-    const sel = $('#fFolder');
-    sel.replaceChildren(h('option', { value: '' }, '(No folder)'));
-    const walk = (pid, depth) => childrenOf(pid).forEach(f => {
-      sel.append(h('option', { value: f.id }, '\u00A0\u00A0'.repeat(depth) + (depth ? '↳ ' : '') + f.name));
-      walk(f.id, depth + 1);
-    });
-    walk('', 0);
-    sel.value = selected && folderExists(selected) ? selected : '';
-  }
-
-  function updatePreview() {
-    const raw = $('#fUrl').value;
-    const url = cleanUrl(raw);
-    const status = $('#urlStatus'), box = $('.preview-box'), frame = $('#fPreview');
-    const setStatus = (msg, cls) => { status.textContent = msg; status.className = 'status' + (cls ? ' ' + cls : ''); };
-    const showFrame = embedUrl => {
-      box.classList.add('live');
-      if (frame.dataset.src !== embedUrl) { frame.dataset.src = embedUrl; frame.src = embedUrl; }
-    };
-    const hideFrame = () => { box.classList.remove('live'); frame.src = 'about:blank'; frame.removeAttribute('data-src'); };
-
-    if (!url) { setStatus(''); hideFrame(); return; }
-    const conv = toEmbed(url);
-    if (!conv) {
-      setStatus('✗ Not recognised. Use a Google Slides/Docs/Sheets/Drive link, a OneDrive embed code, or a Canva “view” link.', 'err');
-      hideFrame();
-      return;
-    }
-    const hint = conv.source === 'onedrive'
-      ? 'If it asks you to sign in, the file is not shared as “Anyone with the link”.'
-      : 'If the preview stays blank, set sharing to “Anyone with the link can view”.';
-
-    if (conv.resolve) {
-      setStatus('Looking up OneDrive link…');
-      hideFrame();
-      apiPost('resolve', { url }).then(j => {
-        if (cleanUrl($('#fUrl').value) !== url) return;
-        setStatus(`✓ OneDrive detected. ${hint}`, 'ok');
-        showFrame(j.embedUrl);
-      }).catch(e => {
-        if (cleanUrl($('#fUrl').value) === url) setStatus('✗ ' + e.message, 'err');
-      });
-      return;
-    }
-    setStatus(`✓ ${SOURCES[conv.source].label} detected. ${hint}`, 'ok');
-    showFrame(conv.embedUrl);
-  }
-
-  function openDialog(slide) {
-    state.editingId = slide ? slide.id : null;
-    $('#dlgTitle').textContent = slide ? 'Edit slide' : 'Add slide';
-    $('#fUrl').value = slide ? slide.url : '';
-    $('#fTitle').value = slide ? slide.title : '';
-    $('#fTags').value = slide ? slide.tags : '';
-    $('#fNotes').value = slide ? slide.notes : '';
-    const defaultFolder = slide ? slide.folderId : (folderExists(state.view) ? state.view : '');
-    fillFolderSelect(defaultFolder);
-    $('#fPreview').removeAttribute('data-src');
-    updatePreview();
-    dlg().showModal();
-  }
-
-  async function saveDialog(e) {
-    e.preventDefault();
-    const url = cleanUrl($('#fUrl').value);
-    if (!toEmbed(url)) { toast('That link type is not supported.', 'err'); return; }
-    const data = {
-      url,
-      title: $('#fTitle').value.trim() || 'Untitled slide',
-      folderId: $('#fFolder').value,
-      tags: $('#fTags').value.trim(),
-      notes: $('#fNotes').value.trim()
-    };
-    const btn = $('#fSave');
-    btn.disabled = true; btn.textContent = 'Saving…';
-    try {
-      if (state.editingId) {
-        const j = await apiPost('editSlide', Object.assign({ id: state.editingId }, data));
-        const i = state.slides.findIndex(s => s.id === state.editingId);
-        if (i >= 0 && j.slide) state.slides[i] = j.slide;
-        toast('Slide updated');
-      } else {
-        const j = await apiPost('addSlide', data);
-        state.slides.push(j.slide);
-        toast('Slide added');
-      }
-      saveCache();
-      dlg().close();
-      renderAll();
-      if (currentId) showViewer(currentId);
-    } catch (err) {
-      toast(err.message, 'err');
-    } finally {
-      btn.disabled = false; btn.textContent = 'Save';
-    }
-  }
-
-  /* ---------- edit mode ---------- */
-  async function toggleEdit() {
-    if (state.edit) {
-      state.edit = false; state.token = '';
-      sessionStorage.removeItem('slidelib_token');
-      renderAll();
-      return;
-    }
-    if (!apiReady()) { toast('Set API_URL in config.js first.', 'err'); return; }
-    const pw = prompt('Admin password:');
-    if (!pw) return;
-    state.token = pw;
-    try {
-      await apiPost('auth', {});
-      state.edit = true;
-      sessionStorage.setItem('slidelib_token', pw);
-      toast('Edit mode on');
-    } catch (e) {
-      state.token = '';
-      toast(e.message, 'err');
-    }
-    renderAll();
-  }
-
-  /* ---------- theme + mobile menu ---------- */
-  function applyTheme(t) {
-    document.documentElement.setAttribute('data-theme', t);
-    localStorage.setItem('slidelib_theme', t);
-  }
-  const openMenu = () => { document.body.classList.add('menu-open'); $('#backdrop').classList.remove('hidden'); };
-  const closeMenu = () => { document.body.classList.remove('menu-open'); $('#backdrop').classList.add('hidden'); };
-
-  /* ---------- wire up ---------- */
-  function init() {
-    document.title = CFG.SITE_TITLE || 'Slide Library';
-    $('#brand').textContent = '📚 ' + (CFG.SITE_TITLE || 'Slide Library');
-
-    applyTheme(localStorage.getItem('slidelib_theme') ||
-      (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
-
-    $('#themeBtn').onclick = () => applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
-    $('#menuBtn').onclick = openMenu;
-    $('#backdrop').onclick = closeMenu;
-    $('#editToggle').onclick = toggleEdit;
-    $('#addSlideBtn').onclick = () => openDialog(null);
-    $('#addFolderBtn').onclick = () => addFolder(folderExists(state.view) ? state.view : '');
-    $('#search').addEventListener('input', e => { state.query = e.target.value; renderAll(); });
-
-    $('#vClose').onclick = closeViewer;
-    $('#vPrev').onclick = $('#stagePrev').onclick = () => step(-1);
-    $('#vNext').onclick = $('#stageNext').onclick = () => step(1);
-    $('#vFull').onclick = toggleFull;
-    $('#stageExit').onclick = exitFull;
-    $('#vShare').onclick = copyShare;
-
-    $('#slideForm').addEventListener('submit', saveDialog);
-    $('#fCancel').onclick = () => dlg().close();
-    let t;
-    $('#fUrl').addEventListener('input', () => { clearTimeout(t); t = setTimeout(updatePreview, 350); });
-    dlg().addEventListener('close', () => { $('#fPreview').src = 'about:blank'; $('#fPreview').removeAttribute('data-src'); });
-
-    document.addEventListener('keydown', e => {
-      if ($('#viewer').classList.contains('hidden') || dlg().open) return;
-      const tag = (e.target.tagName || '').toLowerCase();
-      if (['input', 'textarea', 'select'].includes(tag)) return;
-      if (e.key === 'f' || e.key === 'F') { e.preventDefault(); toggleFull(); }
-      else if (e.key === 'ArrowLeft') step(-1);
-      else if (e.key === 'ArrowRight') step(1);
-      else if (e.key === 'Escape') {
-        if (stage().classList.contains('pseudo-full')) exitFull();
-        else if (!isFull()) closeViewer();
-      }
-    });
-
-    window.addEventListener('popstate', route);
-    window.addEventListener('hashchange', route);
-
-    // show cached data instantly, then refresh in the background
-    try {
-      const cached = JSON.parse(localStorage.getItem(CFG.CACHE_KEY) || 'null');
-      if (cached) { state.slides = cached.slides || []; state.folders = cached.folders || []; }
-    } catch (e) {}
-    renderAll();
-    route();
-
-    if (!apiReady()) {
-      const b = $('#banner');
-      b.textContent = 'Almost there: paste your Apps Script Web app URL into config.js (API_URL), then reload.';
-      b.classList.remove('hidden');
+      var key = decodeURIComponent(at >= 0 ? part.slice(0, at) : part);
+      params[key.toLowerCase()] = decodeURIComponent((at >= 0 ? part.slice(at + 1) : '').replace(/\+/g, ' '));
+    } catch (_e) { throw new Error('The link contains invalid URL encoding.'); }
+  });
+  return { host: host, path: path, query: query, hash: hash, params: params, origin: 'https://' + host };
+}
+function setQuery_(url, changes) {
+  var u = parseHttps_(url);
+  var p = u.params;
+  Object.keys(changes).forEach(function (key) {
+    if (changes[key] === null) delete p[key.toLowerCase()];
+    else p[key.toLowerCase()] = String(changes[key]);
+  });
+  var query = Object.keys(p).map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(p[k]); }).join('&');
+  return u.origin + u.path + (query ? '?' + query : '') + u.hash;
+}
+function isHost_(host, root) { return host === root || host.slice(-(root.length + 1)) === '.' + root; }
+function convertLink_(input, extraHosts) {
+  var text = String(input || '').trim();
+  if (!text || text.length > 10000) throw new Error('Paste a link or an iframe embed code (maximum 10,000 characters).');
+  if (/<iframe\b/i.test(text)) {
+    var iframe = /<iframe\b[^>]*\bsrc\s*=\s*(["'])([\s\S]*?)\1/i.exec(text);
+    if (!iframe) throw new Error('The iframe needs a quoted HTTPS src attribute.');
+    text = decodeEntities_(iframe[2]).trim();
+  } else if (/[<>]/.test(text)) throw new Error('Only links or iframe embed codes are supported.');
+  var u = parseHttps_(text);
+  var p = u.params;
+  var result = { url: text, embedUrl: text, source: '', needsResolve: false, warning: '' };
+  var id;
+  var m;
+  var resource = p.resourcekey ? '?resourcekey=' + encodeURIComponent(p.resourcekey) : '';
+  if (u.host === '1drv.ms' || u.host === 'forms.gle') {
+    result.source = u.host === '1drv.ms' ? 'OneDrive' : 'Google Forms';
+    result.needsResolve = true; result.embedUrl = '';
+    result.warning = 'This short link needs server-side resolution.';
+  } else if (u.host === 'docs.google.com') {
+    m = /^\/(presentation|document|spreadsheets|forms|drawings)(?:\/u\/\d+)?\/d\/(e\/)?([a-zA-Z0-9_-]+)(?:\/|$)/.exec(u.path);
+    if (!m) throw new Error('Use the document’s sharing link or published embed code.');
+    var kind = m[1];
+    var published = !!m[2];
+    id = m[3];
+    var base = u.origin + '/' + kind + '/d/' + (published ? 'e/' : '') + id;
+    if (kind === 'presentation') {
+      result.source = 'Google Slides';
+      result.embedUrl = base + (published ? '/embed' : '/preview') + '?start=false&loop=false&delayms=3000';
+      if (!published && p.resourcekey) result.embedUrl += '&resourcekey=' + encodeURIComponent(p.resourcekey);
+    } else if (kind === 'document') {
+      result.source = 'Google Docs';
+      result.embedUrl = base + (published ? '/pub?embedded=true' : '/preview' + resource);
+    } else if (kind === 'spreadsheets') {
+      result.source = 'Google Sheets';
+      result.embedUrl = base + (published ? '/pubhtml?widget=true&headers=false' : '/preview' + resource);
+      var gid = p.gid || (/\bgid=(\d+)/.exec(u.hash) || [])[1];
+      if (gid && /^\d+$/.test(gid)) result.embedUrl += (result.embedUrl.indexOf('?') >= 0 ? '&' : '?') + 'gid=' + gid;
+    } else if (kind === 'forms') {
+      if (/\/edit\/?$/.test(u.path)) throw new Error('For Forms, paste the responder link from Publish/Send, not the editor link.');
+      result.source = 'Google Forms'; result.embedUrl = setQuery_(base + '/viewform' + (u.query ? '?' + u.query : ''), { embedded: 'true' });
     } else {
-      refresh(true);
+      result.source = 'Google Drawings';
+      result.embedUrl = published || /\/pub$/.test(u.path) ? base + '/pub?w=1440&h=900' : 'https://drive.google.com/file/d/' + id + '/preview' + resource;
+    }
+  } else if (u.host === 'drive.google.com') {
+    m = /^\/(?:drive\/(?:u\/\d+\/)?|)folders\/([\w-]+)/.exec(u.path);
+    if (m || /\/embeddedfolderview$/.test(u.path)) {
+      id = m ? m[1] : p.id;
+      if (!id || !/^[\w-]+$/.test(id)) throw new Error('Drive folder ID is missing.');
+      result.source = 'Drive folder';
+      result.embedUrl = 'https://drive.google.com/embeddedfolderview?id=' + id + (p.resourcekey ? '&resourcekey=' + encodeURIComponent(p.resourcekey) : '') + '#grid';
+    } else {
+      m = /^\/file\/d\/([\w-]+)/.exec(u.path);
+      id = m ? m[1] : p.id;
+      if (!id || !/^[\w-]+$/.test(id)) throw new Error('Use a Drive file or folder sharing link.');
+      result.source = 'Google Drive'; result.embedUrl = 'https://drive.google.com/file/d/' + id + '/preview' + resource;
+    }
+  } else if (isHost_(u.host, 'canva.com')) {
+    m = /^\/design\/([\w-]+)(?:\/([\w-]+))?/.exec(u.path);
+    if (!m) throw new Error('Use a Canva design link or its Share → Embed code.');
+    result.source = 'Canva';
+    var token = m[2] && !/^(edit|view|watch|embed|present)$/.test(m[2]) ? '/' + m[2] : '';
+    result.embedUrl = 'https://www.canva.com/design/' + m[1] + token + '/view?embed';
+    result.warning = 'Enable Share → Embed in Canva. A link alone does not publish the design.';
+  } else if (u.host === 'onedrive.live.com' || u.host === 'www.onedrive.live.com' || u.host === 'onedrive.com') {
+    result.source = 'OneDrive';
+    var resid = p.resid || p.id;
+    if (/\/embed\/?$/.test(u.path)) result.embedUrl = text;
+    else if (resid && /^[a-f0-9]+![a-z0-9]+$/i.test(resid)) {
+      result.embedUrl = 'https://onedrive.live.com/embed?resid=' + encodeURIComponent(resid) + (p.authkey ? '&authkey=' + encodeURIComponent(p.authkey) : '');
+    } else {
+      result.embedUrl = setQuery_(text, { action: 'embedview' });
+      result.warning = 'This OneDrive link may not embed. Prefer OneDrive → Embed → Generate and paste the iframe code.';
+    }
+  } else if (isHost_(u.host, 'sharepoint.com')) {
+    result.source = 'OneDrive';
+    result.embedUrl = setQuery_(text, { action: 'embedview', web: '1' });
+    result.warning = 'Microsoft 365 tenant permissions may require sign-in or prevent embedding. Prefer a generated embed code.';
+  } else if (u.host === 'view.officeapps.live.com') {
+    if (!/^\/op\/embed\.aspx$/i.test(u.path)) throw new Error('Use an Office Web Viewer embed URL.');
+    if (p.src) parseHttps_(p.src);
+    result.source = 'OneDrive';
+  } else if (u.host.endsWith('.github.io') || (extraHosts || []).indexOf(u.host) >= 0) {
+    result.source = u.host.endsWith('.github.io') ? 'GitHub Pages' : 'Web';
+    result.warning = 'The website must allow framing. If it blocks embedding, use Open original.';
+  } else throw new Error('Unsupported host. Use Google, Canva, GitHub Pages, OneDrive, or a configured custom web domain.');
+  return result;
+}
+// END SHARED CONVERTER
+
+(() => {
+  const config = window.APP_CONFIG || {};
+  const $ = id => document.getElementById(id);
+  const state = {
+    slides: [], folders: [], scope: 'all', query: '', tag: '', source: '', sort: 'newest',
+    expanded: new Set(), password: '', admin: false, busy: false, loading: false, loaded: false,
+    viewerId: '', viewerIds: [], pendingDelete: null, slideEdit: null, folderEdit: null,
+    slideRequestId: '', folderRequestId: '', previewSequence: 0, previewTimer: null,
+    idleTimer: null, notice: '', noticeKind: '', theme: 'light'
+  };
+  const node = (tag, className, text) => {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+    if (text !== undefined) el.textContent = text;
+    return el;
+  };
+  function icon(name) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'icon'); svg.setAttribute('aria-hidden', 'true');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', '#i-' + name); svg.append(use); return svg;
+  }
+  function iconButton(name, label, handler, className = '') {
+    const button = node('button', 'icon-btn ' + className);
+    button.type = 'button'; button.title = label; button.setAttribute('aria-label', label);
+    button.append(icon(name)); if (handler) button.addEventListener('click', handler); return button;
+  }
+  function requestId() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    if (window.crypto && crypto.getRandomValues) return Array.from(crypto.getRandomValues(new Uint8Array(16)), v => v.toString(16).padStart(2, '0')).join('');
+    return Date.now().toString(36) + Math.random().toString(36).slice(2).padEnd(16, '0');
+  }
+  function apiUrl() {
+    const url = String(config.API_URL || '').trim();
+    if (!/^https:\/\/script\.google\.com\/macros\/s\/[a-zA-Z0-9_-]+\/exec$/.test(url)) {
+      throw new Error('Connect your library: paste the Apps Script /exec URL into config.js, then reload.');
+    }
+    return url;
+  }
+  async function api(action, payload = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), config.REQUEST_TIMEOUT_MS || 45000);
+    try {
+      const options = { redirect: 'follow', credentials: 'omit', signal: controller.signal };
+      if (action) {
+        options.method = 'POST';
+        options.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
+        options.body = JSON.stringify({ action, password: state.password, ...payload });
+      }
+      const response = await fetch(apiUrl(), options);
+      const text = await response.text();
+      let result;
+      try { result = JSON.parse(text); }
+      catch (_error) { throw new Error('The API returned HTML instead of JSON. Deploy as a Web app with access Anyone, use /exec, and run setup().'); }
+      if (!response.ok || !result.ok) {
+        const error = new Error(result.error?.message || 'The server could not complete this request.');
+        error.code = result.error?.code;
+        if (error.code === 'UNAUTHORIZED') lockAdmin(false);
+        throw error;
+      }
+      return result;
+    } catch (error) {
+      if (error.name === 'AbortError') throw new Error('The request timed out. It may already have saved. Refresh before retrying; no automatic write retry is performed.');
+      if (error instanceof TypeError) throw new Error('Connection failed. Check the /exec URL, public deployment, network, and browser privacy settings. If saving, refresh before retrying: the write may have succeeded.');
+      throw error;
+    } finally { clearTimeout(timer); }
+  }
+  function notice(message, kind = '') {
+    state.notice = message; state.noticeKind = kind;
+    $('connectionStatus').textContent = message;
+    $('connectionStatus').className = 'notice' + (kind === 'error' ? ' error' : '');
+    $('connectionStatus').hidden = !message;
+  }
+  function acceptData(data) {
+    if (!data || !Array.isArray(data.slides) || !Array.isArray(data.folders)) throw new Error('Unexpected API response. Update Code.gs and redeploy the backend.');
+    state.slides = data.slides; state.folders = data.folders;
+    if (state.scope.startsWith('folder:') && !state.folders.some(f => 'folder:' + f.id === state.scope)) state.scope = 'all';
+    state.loaded = true;
+    $('syncLabel').textContent = 'Synced ' + new Date(data.fetchedAt || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' · Public reads cached 120s';
+    if (data.converterVersion !== CONVERTER_VERSION) {
+      if (state.admin) lockAdmin(false);
+      notice('Frontend and backend link converters differ. Deploy both matching copies before editing.', 'error');
+    }
+    else if (state.noticeKind !== 'error') notice('');
+    render();
+  }
+  function skeletons() {
+    $('resourceGrid').replaceChildren(); $('emptyState').hidden = true;
+    for (let i = 0; i < 6; i++) {
+      const card = node('div', 'resource-card'); card.setAttribute('aria-hidden', 'true');
+      card.append(node('div', 'skeleton skeleton-cover'));
+      const body = node('div', 'skeleton-body');
+      for (let j = 0; j < 3; j++) body.append(node('div', 'skeleton skeleton-line'));
+      card.append(body); $('resourceGrid').append(card);
     }
   }
-
-  init();
+  async function load() {
+    if (state.loading || state.busy) return;
+    state.loading = true; $('refreshBtn').disabled = true;
+    if (!state.loaded) skeletons();
+    try {
+      apiUrl();
+      const result = await api(); notice(''); acceptData(result.data);
+      route();
+    } catch (error) {
+      notice(error.message, 'error');
+      if (!state.loaded) {
+        $('resourceGrid').replaceChildren(); $('emptyState').hidden = false;
+        $('emptyTitle').textContent = config.API_URL ? 'Let’s reconnect your library.' : 'A new home for your resources.';
+        $('emptyText').textContent = config.API_URL ? 'Your collection is safe in Google Sheets. Check the connection, then try again.' : 'Set up Google Sheets and Apps Script using the README, then add your API URL to config.js.';
+        $('emptyAction').textContent = 'Try connection'; $('emptyAction').onclick = load;
+      }
+    } finally { state.loading = false; $('refreshBtn').disabled = false; }
+  }
+  async function mutate(action, payload, id = requestId()) {
+    if (!state.admin || !state.password) throw new Error('Unlock admin access to edit this library.');
+    if (state.busy || state.loading) throw new Error('Another operation is in progress. Please wait a moment.');
+    state.busy = true;
+    try {
+      const result = await api(action, { payload, requestId: id });
+      notice(''); acceptData(result.data); return result;
+    } finally { state.busy = false; }
+  }
+  function folder(id) { return state.folders.find(f => f.id === id); }
+  function ancestors(id) {
+    const chain = []; const seen = new Set(); let current = folder(id);
+    while (current && !seen.has(current.id) && chain.length < 20) {
+      seen.add(current.id); chain.unshift(current); current = folder(current.parentId);
+    }
+    return chain;
+  }
+  function descendants(id) {
+    const ids = new Set([id]); let changed = true;
+    while (changed) {
+      changed = false;
+      state.folders.forEach(f => { if (ids.has(f.parentId) && !ids.has(f.id)) { ids.add(f.id); changed = true; } });
+    }
+    return ids;
+  }
+  function scopedSlides() {
+    let list = state.slides;
+    if (state.scope === 'favorites') list = list.filter(s => s.favorite);
+    if (state.scope === 'unfiled') list = list.filter(s => !s.folderId);
+    if (state.scope.startsWith('folder:')) {
+      const ids = descendants(state.scope.slice(7)); list = list.filter(s => ids.has(s.folderId));
+    }
+    const words = state.query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+    return list.filter(s => {
+      const haystack = [s.title, ...(s.tags || []), s.notes || ''].join(' ').toLocaleLowerCase();
+      return words.every(w => haystack.includes(w)) && (!state.source || s.source === state.source) && (!state.tag || (s.tags || []).includes(state.tag));
+    }).sort((a, b) => state.sort === 'title' ? a.title.localeCompare(b.title) : String(b[state.sort === 'updated' ? 'updatedAt' : 'createdAt']).localeCompare(String(a[state.sort === 'updated' ? 'updatedAt' : 'createdAt'])));
+  }
+  function setScope(scope, updateHash = true) {
+    state.scope = scope;
+    if (scope.startsWith('folder:')) ancestors(scope.slice(7)).forEach(f => state.expanded.add(f.id));
+    closeNav();
+    if (updateHash) {
+      const params = new URLSearchParams();
+      if (scope.startsWith('folder:')) params.set('folder', scope.slice(7));
+      else if (scope !== 'all') params.set('view', scope);
+      history.replaceState(null, '', location.pathname + location.search + (params.size ? '#' + params.toString() : ''));
+    }
+    render();
+  }
+  function renderFolders() {
+    const root = $('folderTree'); root.replaceChildren();
+    $('folderEmpty').hidden = !!state.folders.length;
+    const visited = new Set();
+    const build = (parentId, container, depth) => {
+      if (depth > 12) return;
+      state.folders.filter(f => (f.parentId || '') === parentId).sort((a, b) => a.name.localeCompare(b.name)).forEach(f => {
+        if (visited.has(f.id)) return; visited.add(f.id);
+        const branch = node('div', 'folder-branch');
+        const row = node('div', 'folder-row' + (state.scope === 'folder:' + f.id ? ' active' : ''));
+        row.style.setProperty('--depth', Math.min(depth, 5));
+        const hasChildren = state.folders.some(child => child.parentId === f.id);
+        const expand = iconButton('chevron', 'Expand ' + f.name, () => {
+          if (state.expanded.has(f.id)) state.expanded.delete(f.id); else state.expanded.add(f.id);
+          renderFolders();
+        }, 'folder-expand' + (hasChildren ? '' : ' leaf') + (state.expanded.has(f.id) ? ' expanded' : ''));
+        if (hasChildren) expand.setAttribute('aria-expanded', String(state.expanded.has(f.id))); else expand.tabIndex = -1;
+        const select = node('button', 'folder-select'); select.type = 'button';
+        select.title = ancestors(f.id).map(item => item.name).join(' / ');
+        select.append(icon('folder'), node('span', 'folder-name', f.name));
+        select.addEventListener('click', () => setScope('folder:' + f.id)); row.append(expand, select);
+        if (state.admin) row.append(iconButton('more', 'Manage ' + f.name, () => openFolderDialog(f), 'folder-edit'));
+        branch.append(row);
+        if (hasChildren && state.expanded.has(f.id)) build(f.id, branch, depth + 1);
+        container.append(branch);
+      });
+    };
+    build('', root, 0);
+  }
+  function renderBreadcrumbs() {
+    const root = $('breadcrumbs'); root.replaceChildren();
+    const home = node('button', '', config.LIBRARY_NAME || 'Folio'); home.addEventListener('click', () => setScope('all')); root.append(home);
+    const items = state.scope.startsWith('folder:') ? ancestors(state.scope.slice(7)) : [{ id: '', name: state.scope === 'favorites' ? 'Favorites' : state.scope === 'unfiled' ? 'Unfiled' : 'All resources' }];
+    items.forEach(f => {
+      root.append(icon('chevron'));
+      const item = node('button', '', f.name); item.addEventListener('click', () => setScope(f.id ? 'folder:' + f.id : state.scope)); root.append(item);
+    });
+  }
+  function render() {
+    renderFolders(); renderBreadcrumbs();
+    for (const [id, scope] of [['allNav', 'all'], ['favoritesNav', 'favorites'], ['unfiledNav', 'unfiled']]) {
+      $(id).classList.toggle('active', state.scope === scope);
+      if (state.scope === scope) $(id).setAttribute('aria-current', 'page'); else $(id).removeAttribute('aria-current');
+    }
+    $('allCount').textContent = state.slides.length;
+    $('favoritesCount').textContent = state.slides.filter(s => s.favorite).length;
+    $('unfiledCount').textContent = state.slides.filter(s => !s.folderId).length;
+    const currentFolder = state.scope.startsWith('folder:') ? folder(state.scope.slice(7)) : null;
+    const title = currentFolder?.name || (state.scope === 'favorites' ? 'Favorites' : state.scope === 'unfiled' ? 'Unfiled' : 'All resources');
+    $('pageTitle').replaceChildren(document.createTextNode(title), node('span', 'heading-period', '.'));
+    $('pageDescription').textContent = currentFolder ? 'Everything in this folder, including its subfolders.' : state.scope === 'favorites' ? 'The ones worth keeping close.' : state.scope === 'unfiled' ? 'A little room for resources waiting to be organized.' : 'Good ideas deserve a place of their own.';
+    $('resourceTotal').textContent = state.slides.length + (state.slides.length === 1 ? ' resource in library' : ' resources in library');
+    const sources = [...new Set(state.slides.map(s => s.source))].sort();
+    $('sourceFilter').replaceChildren(new Option('All sources', ''));
+    if (state.source && !sources.includes(state.source)) state.source = '';
+    sources.forEach(source => $('sourceFilter').add(new Option(source, source)));
+    $('sourceFilter').value = state.source;
+    const list = scopedSlides(); $('resultCount').textContent = list.length + (list.length === 1 ? ' item' : ' items');
+    $('resourceGrid').replaceChildren(...list.map(renderCard));
+    $('activeFilters').replaceChildren();
+    const filters = [];
+    if (state.tag) filters.push(['Tag: ' + state.tag + ' ×', () => { state.tag = ''; render(); }]);
+    if (state.query) filters.push(['Search: ' + state.query + ' ×', () => { state.query = ''; $('searchInput').value = ''; render(); }]);
+    filters.forEach(([label, action]) => { const b = node('button', '', label); b.addEventListener('click', action); $('activeFilters').append(b); });
+    $('activeFilters').hidden = !filters.length;
+    $('emptyState').hidden = list.length > 0;
+    if (!list.length) {
+      const filtering = !!(state.query || state.tag || state.source);
+      $('emptyTitle').textContent = filtering ? 'Nothing quite matches yet.' : 'Make room for good ideas.';
+      $('emptyText').textContent = filtering ? 'Try a different search or clear your filters to see more resources.' : state.admin ? 'Add a link to your first slide deck, document, or interactive resource.' : 'Resources will appear here when the library administrator adds them.';
+      $('emptyAction').hidden = !filtering && !state.admin;
+      $('emptyAction').textContent = filtering ? 'Clear filters' : 'Add first resource';
+      $('emptyAction').onclick = filtering ? clearFilters : () => openSlideDialog();
+    }
+  }
+  function renderCard(slide) {
+    const card = node('article', 'resource-card');
+    const cover = node('button', 'card-cover'); cover.type = 'button'; cover.setAttribute('aria-label', 'View ' + slide.title);
+    const design = node('div', 'cover-design');
+    const label = node('span', 'cover-label', slide.source.toUpperCase());
+    const baseline = node('div', 'cover-baseline'); const lines = node('span', 'cover-lines'); lines.append(node('span'), node('span'), node('span'));
+    baseline.append(node('span', '', (slide.tags || [])[0] || 'RESOURCE LIBRARY'), lines);
+    design.append(label, node('strong', '', slide.title), baseline); cover.append(design);
+    if (slide.thumbnailUrl) {
+      try {
+        parseHttps_(slide.thumbnailUrl);
+        const image = node('img'); image.src = slide.thumbnailUrl; image.alt = 'Cover for ' + slide.title;
+        image.width = 640; image.height = 400; image.loading = 'lazy'; image.decoding = 'async'; image.referrerPolicy = 'no-referrer';
+        image.addEventListener('error', () => { image.remove(); design.hidden = false; }, { once: true });
+        design.hidden = true; cover.append(image);
+      } catch (_error) { /* Invalid image links fall back to the title cover. */ }
+    }
+    const open = node('span', 'cover-open'); open.append(icon('expand')); cover.append(open);
+    cover.addEventListener('click', () => openViewer(slide.id));
+    const content = node('div', 'card-content'); const top = node('div', 'card-topline');
+    const badge = node('span', 'badge'); badge.append(node('span', 'badge-dot'), document.createTextNode(slide.source));
+    const star = iconButton('star', (slide.favorite ? 'Remove from' : 'Add to') + ' Favorites' + (state.admin ? '' : ' (admin only)'), async () => {
+      if (!state.admin) return;
+      star.disabled = true;
+      try { await mutate('setFavorite', { id: slide.id, expectedUpdatedAt: slide.updatedAt, favorite: !slide.favorite }); }
+      catch (error) { notice(error.message, 'error'); star.disabled = false; }
+    }, 'favorite-btn' + (slide.favorite ? ' selected' : ''));
+    star.disabled = !state.admin; star.setAttribute('aria-pressed', String(!!slide.favorite));
+    top.append(badge, star);
+    const title = node('button', 'card-title', slide.title); title.addEventListener('click', () => openViewer(slide.id));
+    const tags = node('div', 'card-tags');
+    (slide.tags || []).slice(0, 4).forEach(tag => {
+      const chip = node('button', 'tag', tag); chip.addEventListener('click', () => { state.tag = tag; render(); }); tags.append(chip);
+    });
+    if ((slide.tags || []).length > 4) tags.append(node('span', 'subtle', '+' + (slide.tags.length - 4)));
+    const bottom = node('div', 'card-bottom'); const location = node('span', 'card-location');
+    const path = ancestors(slide.folderId).map(f => f.name).join(' / ') || 'Unfiled'; location.title = path;
+    location.append(icon('folder'), node('span', '', path)); bottom.append(location);
+    if (state.admin) {
+      const actions = node('div', 'card-admin-actions');
+      actions.append(iconButton('edit', 'Edit ' + slide.title, () => openSlideDialog(slide)), iconButton('trash', 'Delete ' + slide.title, () => confirmSlideDelete(slide)));
+      bottom.append(actions);
+    } else bottom.append(node('span', '', new Date(slide.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })));
+    content.append(top, title, tags, bottom); card.append(cover, content); return card;
+  }
+  function clearFilters() { state.query = ''; state.tag = ''; state.source = ''; $('searchInput').value = ''; render(); }
+  function closeNav() { document.body.classList.remove('nav-open'); $('sidebarBackdrop').hidden = true; $('menuToggle').setAttribute('aria-expanded', 'false'); }
+  function openDialog(id) { if (!$(id).open) $(id).showModal(); }
+  function syncAdmin() {
+    document.querySelectorAll('.admin-only').forEach(el => { el.hidden = !state.admin; });
+    $('viewOnlyPill').hidden = state.admin;
+    $('adminLabel').textContent = state.admin ? 'Lock editing' : 'Admin access';
+    $('roleLabel').textContent = state.admin ? 'ADMIN · EDITING ENABLED' : 'VIEW-ONLY LIBRARY';
+    $('adminIndicator').classList.toggle('unlocked', state.admin);
+    render();
+  }
+  function resetIdle() {
+    if (!state.admin) return;
+    clearTimeout(state.idleTimer);
+    state.idleTimer = setTimeout(() => lockAdmin(true), Math.max(1, Number(config.ADMIN_IDLE_MINUTES) || 15) * 60000);
+  }
+  function lockAdmin(showNotice = true) {
+    state.admin = false; state.password = ''; clearTimeout(state.idleTimer);
+    $('adminPassword').value = '';
+    for (const id of ['slideDialog', 'folderDialog', 'confirmDialog']) if ($(id).open) $(id).close();
+    syncAdmin(); if (showNotice) notice('Editing locked. Your library is back in view-only mode.');
+  }
+  async function unlock(event) {
+    event.preventDefault(); $('adminError').textContent = '';
+    state.password = $('adminPassword').value; $('unlockBtn').disabled = true; $('unlockBtn').textContent = 'Checking…';
+    try {
+      const result = await api('login');
+      if (!$('adminDialog').open) { state.password = ''; return; }
+      if (result.converterVersion !== CONVERTER_VERSION) throw new Error('The frontend and backend versions differ. Update and redeploy both before editing.');
+      state.admin = true; $('adminPassword').value = ''; $('adminDialog').close(); syncAdmin(); resetIdle(); notice('Editing unlocked. Changes are saved to Google Sheets.');
+    } catch (error) { state.password = ''; $('adminError').textContent = error.message; }
+    finally { $('unlockBtn').disabled = false; $('unlockBtn').textContent = 'Unlock editing'; }
+  }
+  function fillFolderOptions(select, value, exclude = new Set()) {
+    select.replaceChildren(new Option('Unfiled / Library root', ''));
+    const walk = (parent, depth, visited) => {
+      if (depth > 12) return;
+      state.folders.filter(f => (f.parentId || '') === parent).sort((a, b) => a.name.localeCompare(b.name)).forEach(f => {
+        if (visited.has(f.id) || exclude.has(f.id)) return; visited.add(f.id);
+        select.add(new Option('— '.repeat(depth) + f.name, f.id)); walk(f.id, depth + 1, visited);
+      });
+    };
+    walk('', 0, new Set()); select.value = value || '';
+  }
+  function openSlideDialog(slide = null) {
+    if (!state.admin) return;
+    state.slideEdit = slide; state.slideRequestId = requestId(); state.previewSequence++;
+    $('slideForm').reset(); $('slideError').textContent = ''; $('linkError').textContent = '';
+    $('slideDetails').open = false;
+    $('slideDialogTitle').textContent = slide ? 'Edit resource' : 'Add a resource';
+    $('saveSlideBtn').textContent = slide ? 'Save changes' : 'Save resource'; $('saveSlideBtn').disabled = false;
+    $('slideInput').value = slide?.url || ''; $('slideTitle').value = slide?.title || '';
+    $('slideTags').value = (slide?.tags || []).join(', '); $('slideNotes').value = slide?.notes || '';
+    $('slideThumbnail').value = slide?.thumbnailUrl || ''; $('slideFavorite').checked = !!slide?.favorite;
+    if (slide?.notes || slide?.thumbnailUrl) $('slideDetails').open = true;
+    fillFolderOptions($('slideFolder'), slide?.folderId || (state.scope.startsWith('folder:') ? state.scope.slice(7) : ''));
+    openDialog('slideDialog'); previewLink();
+  }
+  function makeFrame(url, title) {
+    const checked = convertLink_(url, config.EXTRA_EMBED_HOSTS || []);
+    if (checked.needsResolve) throw new Error('This resource needs to be re-saved by the administrator to resolve its short link.');
+    const frame = node('iframe', 'resource-frame');
+    // Use the stored embed URL only after validating its scheme/provider.
+    frame.src = url; frame.title = title; frame.referrerPolicy = 'strict-origin-when-cross-origin';
+    frame.setAttribute('allow', 'fullscreen; autoplay; clipboard-write'); frame.setAttribute('allowfullscreen', '');
+    let sandbox = 'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-presentation';
+    // Web embeds have an opaque origin: never combine scripts+same-origin for user sites.
+    if (checked.source !== 'GitHub Pages' && checked.source !== 'Web') sandbox += ' allow-same-origin';
+    frame.setAttribute('sandbox', sandbox); return frame;
+  }
+  async function previewLink() {
+    const sequence = ++state.previewSequence;
+    const input = $('slideInput').value.trim();
+    $('linkError').textContent = ''; $('previewOriginal').hidden = true;
+    $('previewStage').replaceChildren(node('p', '', input ? 'Preparing your preview…' : 'Paste a link.\nSee it here before saving.'));
+    $('previewBadge').textContent = 'Waiting for a link';
+    if (!input) return;
+    try {
+      let link = convertLink_(input, config.EXTRA_EMBED_HOSTS || []);
+      if (link.needsResolve) {
+        $('previewBadge').textContent = 'Resolving…';
+        const result = await api('resolveLink', { input }); link = result.link;
+      }
+      if (sequence !== state.previewSequence || !$('slideDialog').open) return;
+      $('previewStage').replaceChildren(makeFrame(link.embedUrl, 'Preview of ' + ($('slideTitle').value || link.source)));
+      $('previewBadge').textContent = link.source;
+      $('previewHint').textContent = link.warning || 'Preview is view-only where the provider supports it. Original sharing permissions still apply.';
+      $('previewOriginal').href = link.url; $('previewOriginal').hidden = false;
+    } catch (error) {
+      if (sequence !== state.previewSequence) return;
+      $('linkError').textContent = error.message; $('previewBadge').textContent = 'Check this link';
+      $('previewStage').replaceChildren(node('p', '', 'A preview will appear when the link is ready.'));
+    }
+  }
+  async function saveSlide(event) {
+    event.preventDefault(); $('slideError').textContent = '';
+    const tags = [...new Set($('slideTags').value.split(',').map(t => t.trim()).filter(Boolean))];
+    if (tags.length > 20 || tags.some(t => t.length > 40)) { $('slideError').textContent = 'Use up to 20 tags, each no longer than 40 characters.'; return; }
+    try { convertLink_($('slideInput').value, config.EXTRA_EMBED_HOSTS || []); }
+    catch (error) { $('slideError').textContent = error.message; return; }
+    const button = $('saveSlideBtn'); button.disabled = true; button.textContent = 'Saving…';
+    try {
+      const old = state.slideEdit;
+      const result = await mutate('saveSlide', {
+        id: old?.id || '', expectedUpdatedAt: old?.updatedAt || '',
+        input: $('slideInput').value, title: $('slideTitle').value, folderId: $('slideFolder').value,
+        tags, notes: $('slideNotes').value, thumbnailUrl: $('slideThumbnail').value, favorite: $('slideFavorite').checked
+      }, state.slideRequestId);
+      $('slideDialog').close(); notice(result.replay ? 'Your earlier save was already applied. Library refreshed.' : old ? 'Resource updated.' : 'A good idea, neatly filed. Resource added.');
+    } catch (error) { $('slideError').textContent = error.message; }
+    finally { button.disabled = false; button.textContent = state.slideEdit ? 'Save changes' : 'Save resource'; }
+  }
+  function openFolderDialog(item = null, parentId = '') {
+    if (!state.admin) return;
+    state.folderEdit = item; state.folderRequestId = requestId();
+    $('folderForm').reset(); $('folderError').textContent = '';
+    $('folderDialogTitle').textContent = item ? 'Rename or move folder' : 'New folder';
+    $('folderName').value = item?.name || '';
+    fillFolderOptions($('folderParent'), item?.parentId || parentId, item ? descendants(item.id) : new Set());
+    $('folderEditActions').hidden = !item; $('saveFolderBtn').disabled = false;
+    openDialog('folderDialog');
+  }
+  async function saveFolder(event) {
+    event.preventDefault(); $('folderError').textContent = ''; $('saveFolderBtn').disabled = true;
+    try {
+      const old = state.folderEdit; const parentId = $('folderParent').value;
+      await mutate('saveFolder', { id: old?.id || '', expectedUpdatedAt: old?.updatedAt || '', name: $('folderName').value, parentId }, state.folderRequestId);
+      if (parentId) state.expanded.add(parentId);
+      $('folderDialog').close(); renderFolders(); notice(old ? 'Folder updated.' : 'New folder created.');
+    } catch (error) { $('folderError').textContent = error.message; }
+    finally { $('saveFolderBtn').disabled = false; }
+  }
+  function confirmSlideDelete(slide) {
+    state.pendingDelete = { action: 'deleteSlide', payload: { id: slide.id, expectedUpdatedAt: slide.updatedAt }, requestId: requestId() };
+    $('confirmTitle').textContent = 'Delete resource?';
+    $('confirmText').textContent = 'Remove “' + slide.title + '” from this library? This does not delete the original file.';
+    $('confirmError').textContent = ''; openDialog('confirmDialog');
+  }
+  function confirmFolderDelete() {
+    const item = state.folderEdit; if (!item) return;
+    const ids = descendants(item.id); const count = state.slides.filter(s => ids.has(s.folderId)).length;
+    state.pendingDelete = { action: 'deleteFolder', payload: { id: item.id, expectedUpdatedAt: item.updatedAt }, requestId: requestId() };
+    $('confirmTitle').textContent = 'Delete this folder tree?';
+    $('confirmText').textContent = 'Delete “' + item.name + '” and ' + (ids.size - 1) + ' subfolder(s)? ' + count + ' resource(s) will be moved to Unfiled, not deleted. Original files stay untouched.';
+    $('confirmError').textContent = ''; openDialog('confirmDialog');
+  }
+  async function performDelete() {
+    if (!state.pendingDelete) return;
+    $('confirmDelete').disabled = true; $('confirmError').textContent = '';
+    try {
+      const pending = state.pendingDelete;
+      await mutate(pending.action, pending.payload, pending.requestId);
+      $('confirmDialog').close();
+      if (pending.action === 'deleteFolder') $('folderDialog').close();
+      state.pendingDelete = null; notice(pending.action === 'deleteFolder' ? 'Folder tree deleted. Its resources are safely in Unfiled.' : 'Resource removed from the library.');
+    } catch (error) { $('confirmError').textContent = error.message; }
+    finally { $('confirmDelete').disabled = false; }
+  }
+  function slideHash(id) { return '#slide=' + encodeURIComponent(id); }
+  function openViewer(id, updateHash = true, preserveOrder = false) {
+    const slide = state.slides.find(s => s.id === id);
+    if (!slide) { notice('This direct link points to a resource that is no longer in the library.', 'error'); return; }
+    if (!preserveOrder) {
+      state.viewerIds = scopedSlides().map(s => s.id);
+      if (!state.viewerIds.includes(id)) state.viewerIds = state.slides.map(s => s.id);
+    }
+    state.viewerId = id;
+    $('viewerTitle').textContent = slide.title; $('viewerSource').textContent = slide.source;
+    try {
+      const safeOriginal = convertLink_(slide.url, config.EXTRA_EMBED_HOSTS || []);
+      $('viewerOriginal').href = safeOriginal.url; $('viewerOriginal').hidden = false;
+    } catch (_error) { $('viewerOriginal').hidden = true; $('viewerOriginal').removeAttribute('href'); }
+    try { $('viewerStage').replaceChildren(makeFrame(slide.embedUrl, slide.title)); }
+    catch (error) { $('viewerStage').replaceChildren(node('p', 'notice error', error.message)); }
+    const position = state.viewerIds.indexOf(id);
+    $('viewerPosition').textContent = (position + 1) + ' / ' + state.viewerIds.length;
+    $('prevSlide').disabled = position <= 0; $('nextSlide').disabled = position >= state.viewerIds.length - 1;
+    $('viewerNote').textContent = slide.notes ? slide.notes : 'Preview blocked? Use Open original. · F fullscreen · ← → navigate · Esc close';
+    $('viewerNote').title = slide.notes || 'Click the toolbar to use keyboard shortcuts outside the embedded resource.';
+    if (updateHash) {
+      const target = location.pathname + location.search + slideHash(id);
+      if ($('viewerDialog').open) history.replaceState(null, '', target); else history.pushState(null, '', target);
+    }
+    openDialog('viewerDialog'); document.title = slide.title + ' — ' + (config.LIBRARY_NAME || 'Folio');
+    $('closeViewer').focus();
+  }
+  function navigateViewer(delta) {
+    const at = state.viewerIds.indexOf(state.viewerId); const id = state.viewerIds[at + delta];
+    if (id) openViewer(id, true, true);
+  }
+  function clearViewer() {
+    $('viewerStage').replaceChildren(); state.viewerId = ''; document.title = (config.LIBRARY_NAME || 'Folio') + ' — Slide library';
+  }
+  function closeViewer(updateHash = true) {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    if ($('viewerDialog').open) $('viewerDialog').close();
+    clearViewer();
+    if (updateHash && new URLSearchParams(location.hash.slice(1)).has('slide')) setScope(state.scope);
+  }
+  async function fullscreen() {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else if ($('viewerDialog').querySelector('.viewer-shell').requestFullscreen) await $('viewerDialog').querySelector('.viewer-shell').requestFullscreen();
+      else $('viewerNote').textContent = 'Native fullscreen is not available in this browser. The viewer already fills the page.';
+    } catch (_error) { $('viewerNote').textContent = 'Your browser blocked native fullscreen. The viewer still fills the page.'; }
+  }
+  function share() {
+    $('shareUrl').value = location.href.split('#')[0] + slideHash(state.viewerId);
+    $('shareFeedback').textContent = '';
+    // A native fullscreen top-layer can hide sibling dialogs: leave fullscreen first.
+    if (document.fullscreenElement) document.exitFullscreen().then(() => openDialog('shareDialog')).catch(() => openDialog('shareDialog'));
+    else openDialog('shareDialog');
+  }
+  async function copyShare() {
+    try {
+      await navigator.clipboard.writeText($('shareUrl').value);
+      $('shareFeedback').textContent = 'Link copied. Ready to share.'; $('copyShare').textContent = 'Copied';
+      setTimeout(() => { $('copyShare').textContent = 'Copy link'; }, 1800);
+    } catch (_error) { $('shareUrl').focus(); $('shareUrl').select(); $('shareFeedback').textContent = 'Select and copy this link manually (Ctrl/Cmd+C).'; }
+  }
+  function route() {
+    if (!state.loaded) return;
+    const params = new URLSearchParams(location.hash.slice(1));
+    const slideId = params.get('slide');
+    if (slideId) { if (state.viewerId !== slideId || !$('viewerDialog').open) openViewer(slideId, false); return; }
+    if ($('viewerDialog').open) closeViewer(false);
+    const folderId = params.get('folder'); const view = params.get('view');
+    setScope(folderId && folder(folderId) ? 'folder:' + folderId : ['favorites', 'unfiled'].includes(view) ? view : 'all', false);
+  }
+  function setTheme(theme) {
+    state.theme = theme; document.documentElement.dataset.theme = theme;
+    const next = theme === 'dark' ? 'light' : 'dark';
+    $('themeToggle').replaceChildren(icon(theme === 'dark' ? 'sun' : 'moon'));
+    $('themeToggle').setAttribute('aria-label', 'Switch to ' + next + ' mode'); $('themeToggle').title = 'Switch to ' + next + ' mode';
+  }
+  document.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => $(button.dataset.close).close()));
+  $('allNav').addEventListener('click', () => setScope('all'));
+  $('favoritesNav').addEventListener('click', () => setScope('favorites'));
+  $('unfiledNav').addEventListener('click', () => setScope('unfiled'));
+  document.querySelector('.brand').addEventListener('click', event => { event.preventDefault(); clearFilters(); setScope('all'); });
+  $('searchInput').addEventListener('input', event => { state.query = event.target.value; render(); });
+  $('sourceFilter').addEventListener('change', event => { state.source = event.target.value; render(); });
+  $('sortSelect').addEventListener('change', event => { state.sort = event.target.value; render(); });
+  $('refreshBtn').addEventListener('click', load);
+  $('themeToggle').addEventListener('click', () => setTheme(state.theme === 'dark' ? 'light' : 'dark'));
+  $('menuToggle').addEventListener('click', () => {
+    const open = !document.body.classList.contains('nav-open');
+    document.body.classList.toggle('nav-open', open); $('sidebarBackdrop').hidden = !open; $('menuToggle').setAttribute('aria-expanded', String(open));
+  });
+  $('sidebarBackdrop').addEventListener('click', closeNav);
+  $('adminToggle').addEventListener('click', () => { if (state.admin) lockAdmin(); else { $('adminError').textContent = ''; openDialog('adminDialog'); } });
+  $('adminForm').addEventListener('submit', unlock);
+  $('adminDialog').addEventListener('close', () => { $('adminPassword').value = ''; });
+  $('addSlide').addEventListener('click', () => openSlideDialog());
+  $('addFolder').addEventListener('click', () => openFolderDialog(null, state.scope.startsWith('folder:') ? state.scope.slice(7) : ''));
+  $('slideForm').addEventListener('submit', saveSlide);
+  $('slideInput').addEventListener('input', () => { clearTimeout(state.previewTimer); ++state.previewSequence; state.previewTimer = setTimeout(previewLink, 500); });
+  $('slideDialog').addEventListener('close', () => { ++state.previewSequence; clearTimeout(state.previewTimer); $('previewStage').replaceChildren(); });
+  $('folderForm').addEventListener('submit', saveFolder);
+  $('folderAddChild').addEventListener('click', () => { const parent = state.folderEdit?.id || ''; openFolderDialog(null, parent); });
+  $('folderDelete').addEventListener('click', confirmFolderDelete);
+  $('confirmDelete').addEventListener('click', performDelete);
+  $('helpBtn').addEventListener('click', () => openDialog('helpDialog'));
+  $('closeViewer').addEventListener('click', () => closeViewer());
+  $('viewerDialog').addEventListener('cancel', event => { event.preventDefault(); closeViewer(); });
+  $('viewerDialog').addEventListener('close', clearViewer);
+  $('prevSlide').addEventListener('click', () => navigateViewer(-1));
+  $('nextSlide').addEventListener('click', () => navigateViewer(1));
+  $('fullscreenBtn').addEventListener('click', fullscreen);
+  $('shareSlide').addEventListener('click', share);
+  $('copyShare').addEventListener('click', copyShare);
+  for (const name of ['pointerdown', 'keydown']) document.addEventListener(name, resetIdle, { passive: true });
+  document.addEventListener('keydown', event => {
+    const top = [...document.querySelectorAll('dialog[open]')].at(-1);
+    const typing = event.target.matches('input,textarea,select,[contenteditable="true"]');
+    if (event.ctrlKey || event.metaKey || event.altKey || typing) return;
+    if (top === $('viewerDialog')) {
+      if (event.key === 'ArrowLeft') { event.preventDefault(); navigateViewer(-1); }
+      if (event.key === 'ArrowRight') { event.preventDefault(); navigateViewer(1); }
+      if (event.key.toLowerCase() === 'f') { event.preventDefault(); fullscreen(); }
+    } else if (!top && event.key === '/') { event.preventDefault(); $('searchInput').focus(); }
+    else if (!top && event.key === '?') openDialog('helpDialog');
+    if (event.key === 'Escape' && !top) closeNav();
+  });
+  window.addEventListener('hashchange', route);
+  window.addEventListener('popstate', route);
+  $('brandName').replaceChildren(document.createTextNode(config.LIBRARY_NAME || 'Folio'), node('span', 'brand-dot', '.'));
+  if (config.LIBRARY_SUBTITLE) document.querySelector('meta[name="description"]').content = config.LIBRARY_SUBTITLE;
+  setTheme(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  renderFolders(); load();
 })();
