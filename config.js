@@ -1,7 +1,8 @@
-// Edit this file after you deploy the Apps Script web app.
-window.CONFIG = {
-  // Paste your Web app URL here (it ends with /exec)
-  API_URL: 'https://script.google.com/macros/s/AKfycbxqQCCbZcYuTpXGSmb8bplDPl8YzOVvwHsaVMSYtQY95HSZQ8i7h39Q7pxG7Od6tCrGYw/exec',
-  SITE_TITLE: 'Slide Library',
-  CACHE_KEY: 'slidelib_cache_v1'
-};
+window.APP_CONFIG = Object.freeze({
+  API_URL: 'https://script.google.com/macros/s/AKfycbxAde4LNpdldrWdtwjIazgOtlVMaWm3hIjLYN-YJs3q0VN5_6Mzb6o1Oj4ZZCCvCvjRxA/exec',
+  LIBRARY_NAME: 'Library',
+  LIBRARY_SUBTITLE: 'Islamic Studies Resources library',
+  EXTRA_EMBED_HOSTS: [],
+  REQUEST_TIMEOUT_MS: 45000,
+  ADMIN_IDLE_MINUTES: 15
+});
